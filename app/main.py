@@ -1,11 +1,10 @@
 from fastapi import FastAPI
 from app.config import get_settings
 from app.database import engine, Base
-from app.routers import alerts 
+from app.routers import alerts, iocs  # Add iocs import
 
 settings = get_settings()
 
-# Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
@@ -13,12 +12,13 @@ app = FastAPI(
 )
 
 # Include routers
-app.include_router(alerts.router) 
+app.include_router(alerts.router)
+app.include_router(iocs.router)  # Add this line
+
 
 @app.on_event("startup")
 async def startup_event():
     """Run on application startup"""
-    # Create tables if they don't exist (migrations should handle this)
     Base.metadata.create_all(bind=engine)
     print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} started")
 
