@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from app.config import get_settings
 from app.database import engine, Base
+from app.routers import alerts 
 
 settings = get_settings()
 
@@ -11,6 +12,8 @@ app = FastAPI(
     description="Lightweight Security Orchestration, Automation & Response platform"
 )
 
+# Include routers
+app.include_router(alerts.router) 
 
 @app.on_event("startup")
 async def startup_event():

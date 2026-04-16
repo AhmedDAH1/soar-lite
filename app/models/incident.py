@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum
 from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
 import enum
 from app.database import Base
 
@@ -42,6 +43,9 @@ class Incident(Base):
         default=StatusEnum.NEW,
         nullable=False
     )
+    
+    # Relationship to alerts
+    alerts = relationship("Alert", back_populates="incident")
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
