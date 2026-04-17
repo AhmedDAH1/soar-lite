@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SOAR-Lite Dashboard</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    
+    <!-- Custom styles -->
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-gray-900 text-gray-100">
+    
+    <!-- Navigation -->
+    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <h1 class="text-2xl font-bold text-blue-400">SOAR-Lite</h1>
+                <span class="text-gray-400 text-sm">Security Operations Dashboard</span>
+            </div>
+            <div class="flex items-center space-x-4">
+                <a href="/docs" target="_blank" class="text-gray-400 hover:text-gray-200">API Docs</a>
+                <span class="text-gray-500">|</span>
+                <span class="text-gray-400" id="clock"></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-6 py-8">
+        
+        <!-- Metrics Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+            
+            <!-- Total Incidents -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div class="text-gray-400 text-sm mb-2">Total Incidents</div>
+                <div class="text-3xl font-bold" id="total-incidents">--</div>
+            </div>
+            
+            <!-- Unresolved -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div class="text-gray-400 text-sm mb-2">Unresolved</div>
+                <div class="text-3xl font-bold text-yellow-400" id="unresolved">--</div>
+            </div>
+            
+            <!-- Critical Unresolved -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div class="text-gray-400 text-sm mb-2">Critical Unresolved</div>
+                <div class="text-3xl font-bold text-red-400" id="critical-unresolved">--</div>
+            </div>
+            
+            <!-- Recent (7 days) -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <div class="text-gray-400 text-sm mb-2">Last 7 Days</div>
+                <div class="text-3xl font-bold text-blue-400" id="recent-7days">--</div>
+            </div>
+            
+        </div>
+
+        <!-- Charts -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+            
+            <!-- Severity Chart -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-semibold mb-4">Incidents by Severity</h2>
+                <canvas id="severityChart"></canvas>
+            </div>
+            
+            <!-- Status Chart -->
+            <div class="bg-gray-800 rounded-lg p-6 border border-gray-700">
+                <h2 class="text-xl font-semibold mb-4">Incidents by Status</h2>
+                <canvas id="statusChart"></canvas>
+            </div>
+            
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 mb-6">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Severity</label>
+                    <select id="filter-severity" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-gray-100">
+                        <option value="">All Severities</option>
+                        <option value="critical">Critical</option>
+                        <option value="high">High</option>
+                        <option value="medium">Medium</option>
+                        <option value="low">Low</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Status</label>
+                    <select id="filter-status" class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-gray-100">
+                        <option value="">All Statuses</option>
+                        <option value="new">New</option>
+                        <option value="investigating">Investigating</option>
+                        <option value="contained">Contained</option>
+                        <option value="resolved">Resolved</option>
+                    </select>
+                </div>
+                
+                <div>
+                    <label class="block text-sm text-gray-400 mb-2">Search</label>
+                    <input type="text" id="filter-search" placeholder="Search title..." 
+                           class="w-full bg-gray-700 border border-gray-600 rounded px-3 py-2 text-gray-100">
+                </div>
+                
+                <div class="flex items-end">
+                    <button onclick="loadIncidents()" 
+                            class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
+                        Apply Filters
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Incidents Table -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-700">
+                <h2 class="text-xl font-semibold">Recent Incidents</h2>
+            </div>
+            
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-750">
+                        <tr class="text-left text-sm text-gray-400">
+                            <th class="px-6 py-3">ID</th>
+                            <th class="px-6 py-3">Title</th>
+                            <th class="px-6 py-3">Severity</th>
+                            <th class="px-6 py-3">Status</th>
+                            <th class="px-6 py-3">Created</th>
+                        </tr>
+                    </thead>
+                    <tbody id="incidents-table" class="divide-y divide-gray-700">
+                        <!-- Populated by JavaScript -->
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                                Loading incidents...
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- JavaScript -->
+    <script src="/static/app.js"></script>
+    
+</body>
+</html>

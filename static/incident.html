@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Incident Detail - SOAR-Lite</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-gray-900 text-gray-100">
+    
+    <!-- Navigation -->
+    <nav class="bg-gray-800 border-b border-gray-700 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-4">
+                <a href="/" class="text-2xl font-bold text-blue-400 hover:text-blue-300">SOAR-Lite</a>
+                <span class="text-gray-400 text-sm">Incident Detail</span>
+            </div>
+            <a href="/" class="text-gray-400 hover:text-gray-200">← Back to Dashboard</a>
+        </div>
+    </nav>
+
+    <div class="max-w-7xl mx-auto px-6 py-8">
+        
+        <!-- Incident Header -->
+        <div class="bg-gray-800 rounded-lg p-6 border border-gray-700 mb-6">
+            <div class="flex items-start justify-between mb-4">
+                <div class="flex-1">
+                    <div class="flex items-center space-x-4 mb-2">
+                        <h1 class="text-2xl font-bold" id="incident-title">Loading...</h1>
+                        <span id="incident-severity-badge"></span>
+                        <span id="incident-status-badge"></span>
+                    </div>
+                    <p class="text-gray-400" id="incident-description"></p>
+                </div>
+                <div class="text-right text-sm text-gray-400">
+                    <div>Created: <span id="incident-created"></span></div>
+                    <div>Updated: <span id="incident-updated"></span></div>
+                </div>
+            </div>
+            
+            <!-- Action Buttons -->
+            <div class="flex space-x-2" id="action-buttons">
+                <!-- Populated by JavaScript -->
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="bg-gray-800 rounded-lg border border-gray-700 mb-6">
+            <div class="flex border-b border-gray-700">
+                <button onclick="showTab('alerts')" id="tab-alerts" 
+                        class="px-6 py-3 font-medium border-b-2 border-blue-500 text-blue-400">
+                    Alerts
+                </button>
+                <button onclick="showTab('iocs')" id="tab-iocs" 
+                        class="px-6 py-3 font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                    IOCs
+                </button>
+                <button onclick="showTab('timeline')" id="tab-timeline" 
+                        class="px-6 py-3 font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
+                    Timeline
+                </button>
+            </div>
+            
+            <!-- Tab Content -->
+            <div class="p-6">
+                
+                <!-- Alerts Tab -->
+                <div id="content-alerts">
+                    <div id="alerts-list"></div>
+                </div>
+                
+                <!-- IOCs Tab -->
+                <div id="content-iocs" class="hidden">
+                    <div class="mb-4 flex justify-between items-center">
+                        <h3 class="text-lg font-semibold">Indicators of Compromise</h3>
+                        <button onclick="enrichIncident()" 
+                                class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
+                            🔍 Enrich IOCs
+                        </button>
+                    </div>
+                    <div id="iocs-table"></div>
+                </div>
+                
+                <!-- Timeline Tab -->
+                <div id="content-timeline" class="hidden">
+                    <div id="timeline-list"></div>
+                </div>
+                
+            </div>
+        </div>
+
+    </div>
+
+    <script src="/static/incident-detail.js"></script>
+    
+</body>
+</html>

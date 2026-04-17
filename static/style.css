@@ -1,0 +1,33 @@
+/* Custom dark mode enhancements */
+.bg-gray-750 {
+    background-color: #2d3748;
+}
+
+/* Smooth transitions */
+tr {
+    transition: background-color 0.2s ease;
+}
+
+/* Table hover effect */
+tbody tr:hover {
+    background-color: #374151 !important;
+}
+
+/* Chart container */
+canvas {
+    max-height: 250px;
+}
+
+/* Loading spinner (optional) */
+.spinner {
+    border: 3px solid rgba(255, 255, 255, 0.1);
+    border-top-color: #3b82f6;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
