@@ -38,6 +38,28 @@ Visit http://127.0.0.1:8000/docs for API documentation.
 ```bash
 pytest -v
 ```
+## 🖥️ Dashboard
+
+SOAR-Lite includes a web-based dashboard for incident management:
+
+### Features
+- **Real-time metrics** - Total incidents, unresolved count, critical alerts
+- **Visual analytics** - Severity and status distribution charts
+- **Advanced filtering** - Search by severity, status, title, or IOC
+- **Incident timeline** - Full audit trail with system and manual actions
+- **One-click status updates** - Enforce workflow validation
+- **IOC enrichment** - Trigger threat intelligence lookups from UI
+
+### Screenshots
+
+*Dashboard Homepage:*
+![Dashboard](docs/dashboard.png)
+
+*Incident Detail View:*
+![Incident Detail](docs/incident-detail.png)
+
+### Access
+Navigate to http://127.0.0.1:8000 after starting the server.
 
 ## 📋 Roadmap
 
