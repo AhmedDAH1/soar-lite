@@ -47,6 +47,7 @@ class Incident(Base):
     # Relationship to alerts
     alerts = relationship("Alert", back_populates="incident")
     iocs = relationship("IOC", back_populates="incident")
+    actions = relationship("Action", back_populates="incident")
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -1,0 +1,30 @@
+name: "Flag High-Confidence Malicious IPs"
+description: "Add tags when AbuseIPDB confidence score is very high"
+version: "1.0"
+enabled: true
+
+trigger:
+  event: "enrichment_completed"
+
+conditions:
+  - field: "ioc.type"
+    operator: "equals"
+    value: "ip"
+  
+  - field: "enrichment_data.abuseipdb.abuse_confidence_score"
+    operator: "greater_than"
+    value: 85
+
+actions:
+  - type: "add_tag"
+    params:
+      tag: "high_confidence_threat"
+  
+  - type: "update_severity"
+    params:
+      severity: "high"
+      only_if_lower: true  # Don't downgrade from critical
+  
+  - type: "create_timeline_entry"
+    params:
+      description: "IP flagged with 85+ AbuseIPDB confidence score"

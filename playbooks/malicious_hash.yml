@@ -1,0 +1,31 @@
+name: "Escalate Malicious Hash Detections"
+description: "Auto-escalate incidents when malicious file hashes are detected"
+version: "1.0"
+enabled: true
+
+trigger:
+  event: "enrichment_completed"
+
+conditions:
+  # Check if any IOC is a hash type
+  - field: "ioc.type"
+    operator: "in"
+    value: ["md5", "sha256"]
+  
+  # Check if marked as malicious
+  - field: "ioc.is_malicious"
+    operator: "equals"
+    value: true
+
+actions:
+  - type: "update_severity"
+    params:
+      severity: "critical"
+  
+  - type: "add_tag"
+    params:
+      tag: "confirmed_malware"
+  
+  - type: "create_timeline_entry"
+    params:
+      description: "Malicious file hash detected via VirusTotal - auto-escalated to CRITICAL"

@@ -1,0 +1,25 @@
+name: "Escalate Multi-IOC Incidents"
+description: "Escalate when incident has 3+ malicious IOCs (indicates coordinated attack)"
+version: "1.0"
+enabled: true
+
+trigger:
+  event: "enrichment_completed"
+
+conditions:
+  - field: "incident.malicious_ioc_count"
+    operator: "greater_than_or_equal"
+    value: 3
+
+actions:
+  - type: "update_severity"
+    params:
+      severity: "critical"
+  
+  - type: "add_tag"
+    params:
+      tag: "coordinated_attack"
+  
+  - type: "create_timeline_entry"
+    params:
+      description: "Multiple malicious IOCs detected - potential coordinated attack"

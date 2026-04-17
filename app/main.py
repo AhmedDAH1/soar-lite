@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from app.config import get_settings
 from app.database import engine, Base
-from app.routers import alerts, iocs, enrichment  # Add enrichment
+from app.routers import alerts, iocs, enrichment, playbooks  # Add playbooks
 
 settings = get_settings()
 
@@ -14,7 +14,8 @@ app = FastAPI(
 # Include routers
 app.include_router(alerts.router)
 app.include_router(iocs.router)
-app.include_router(enrichment.router)  # Add this line
+app.include_router(enrichment.router)
+app.include_router(playbooks.router)  # Add this line
 
 
 @app.on_event("startup")
