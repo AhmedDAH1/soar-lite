@@ -40,9 +40,20 @@
                 </div>
             </div>
             
-            <!-- Action Buttons -->
+                    <!-- Action Buttons -->
+        <div class="flex justify-between">
             <div class="flex space-x-2" id="action-buttons">
                 <!-- Populated by JavaScript -->
+            </div>
+            <div class="flex space-x-2">
+                <button onclick="downloadReport('pdf')" 
+                        class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded text-sm">
+                    📄 Download PDF
+                </button>
+                <button onclick="downloadReport('docx')" 
+                        class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded text-sm">
+                    📝 Download DOCX
+                </button>
             </div>
         </div>
 

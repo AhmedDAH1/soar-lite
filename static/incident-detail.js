@@ -310,6 +310,11 @@ async function enrichIncident() {
         button.textContent = '🔍 Enrich IOCs';
     }
 }
+// Download report
+function downloadReport(format) {
+    const url = `${API_BASE}/api/reports/incident/${incidentId}/${format}`;
+    window.open(url, '_blank');
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', loadIncident);
