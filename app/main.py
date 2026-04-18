@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import get_settings
 from app.database import engine, Base
-from app.routers import alerts, iocs, enrichment, playbooks, incidents, reports  # Add reports
+from app.routers import alerts, iocs, enrichment, playbooks, incidents, reports, webhooks  # Add webhooks
 
 settings = get_settings()
 
@@ -22,7 +22,8 @@ app.include_router(iocs.router)
 app.include_router(enrichment.router)
 app.include_router(playbooks.router)
 app.include_router(incidents.router)
-app.include_router(reports.router)  # Add this line
+app.include_router(reports.router)
+app.include_router(webhooks.router)  # Add this line
 
 
 @app.on_event("startup")
