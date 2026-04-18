@@ -2,6 +2,12 @@
 
 > Lightweight Security Orchestration, Automation & Response platform demonstrating SOC workflow orchestration, threat intelligence enrichment, and automated playbook execution.
 
+# SOAR-Lite
+
+![CI](https://github.com/AhmedDAH1/soar-lite/actions/workflows/ci.yml/badge.svg)
+[![Coverage](https://img.shields.io/badge/coverage-88%25-brightgreen)](https://github.com/AhmedDAH1/soar-lite)
+
+> Lightweight Security Orchestration, Automation & Response platform demonstrating SOC workflow orchestration, threat intelligence enrichment, and automated playbook execution.
 ## 🎯 Project Status
 
 **Current Milestone:** 0 - Foundation ✅  
