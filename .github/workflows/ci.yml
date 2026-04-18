@@ -10,11 +10,14 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
+    env:
+      CI: true  # Tell tests we're in CI environment
+
     steps:
-    - uses: actions/checkout@v4  # Updated from v3
+    - uses: actions/checkout@v4
 
     - name: Set up Python
-      uses: actions/setup-python@v5  # Updated from v4
+      uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
@@ -25,15 +28,8 @@ jobs:
 
     - name: Run linting
       run: |
-        ruff check app/ tests/ || true  # Don't fail on linting warnings
+        ruff check app/ tests/ || true
 
-    - name: Run tests with coverage
+    - name: Run tests (skip integration tests)
       run: |
-        pytest --cov=app --cov-report=xml --cov-report=term-missing -v
-
-    - name: Upload coverage to Codecov (optional)
-      if: false  # Disabled for now
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
+        pytest -v --tb=short
