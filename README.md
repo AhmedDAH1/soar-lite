@@ -119,19 +119,6 @@ requests.post("http://localhost:8000/api/webhooks/generic", json=alert)
 ### Access
 Navigate to http://127.0.0.1:8000 after starting the server.
 
-## 📋 Roadmap
-
-- [x] M0: Foundation & project setup
-- [ ] M1: Alert ingestion API
-- [ ] M2: IOC extraction
-- [ ] M3: Threat intelligence enrichment
-- [ ] M4: Playbook system
-- [ ] M5: Case management CRUD
-- [ ] M6: Web dashboard
-- [ ] M7: Report generation
-- [ ] M8: Webhook ingestion
-- [ ] M9: Testing & CI/CD
-- [ ] M10: Production deployment
 
 ## 📚 Learning Goals
 
