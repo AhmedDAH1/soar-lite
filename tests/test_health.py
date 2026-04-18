@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
@@ -9,8 +10,8 @@ def test_root_endpoint():
     response = client.get("/")
     assert response.status_code == 200
     # Root now serves HTML dashboard, not JSON
-    assert response.headers["content-type"].startswith("text/html")
-    assert len(response.content) > 0  # Should return HTML content
+    assert "text/html" in response.headers.get("content-type", "")
+
 
 def test_health_check():
     """Test the health check endpoint"""

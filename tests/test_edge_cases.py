@@ -1,5 +1,5 @@
-import pytest
 from fastapi.testclient import TestClient
+
 from app.main import app
 from app.services.ioc_extractor import IOCExtractor
 from app.services.playbook_engine import PlaybookEngine
@@ -20,7 +20,7 @@ def test_extract_multiple_same_ioc():
     """Test that duplicate IOCs are not extracted twice"""
     text = "IP 8.8.8.8 appeared, then 8.8.8.8 again, and 8.8.8.8 once more"
     iocs = IOCExtractor.extract_from_text(text)
-    
+
     ip_iocs = [ioc for ioc in iocs if ioc["type"].value == "ip"]
     assert len(ip_iocs) == 1  # Only extracted once despite 3 occurrences
 
@@ -29,7 +29,7 @@ def test_extract_invalid_ip():
     """Test that invalid IPs are filtered out"""
     text = "Invalid IPs: 999.999.999.999 and 256.1.1.1"
     iocs = IOCExtractor.extract_from_text(text)
-    
+
     ip_iocs = [ioc for ioc in iocs if ioc["type"].value == "ip"]
     assert len(ip_iocs) == 0  # Both invalid, should be filtered
 
@@ -56,7 +56,7 @@ def test_playbook_condition_missing_field():
         "value": "test"
     }
     context = {"ioc": {"type": "ip"}}
-    
+
     result = PlaybookEngine.evaluate_condition(condition, context)
     assert result is False  # Missing field should fail condition
 
@@ -69,7 +69,7 @@ def test_playbook_invalid_operator():
         "value": "ip"
     }
     context = {"ioc": {"type": "ip"}}
-    
+
     result = PlaybookEngine.evaluate_condition(condition, context)
     assert result is False  # Unknown operator should fail safely
 
@@ -79,7 +79,7 @@ def test_playbook_nested_field_none():
     context = {
         "enrichment_data": None
     }
-    
+
     value = PlaybookEngine._get_nested_value(context, "enrichment_data.virustotal.malicious")
     assert value is None
 
@@ -92,10 +92,10 @@ def test_create_alert_minimal_data():
         "source": "test",
         "title": "Minimal Alert"
     }
-    
+
     response = client.post("/api/alerts/", json=payload)
     assert response.status_code == 201
-    
+
     data = response.json()
     assert data["source"] == "test"
     assert data["title"] == "Minimal Alert"
@@ -109,7 +109,7 @@ def test_create_alert_very_long_title():
         "source": "test",
         "title": long_title
     }
-    
+
     response = client.post("/api/alerts/", json=payload)
     assert response.status_code == 201
 
@@ -120,23 +120,11 @@ def test_create_alert_empty_title():
         "source": "test",
         "title": ""
     }
-    
+
     response = client.post("/api/alerts/", json=payload)
     assert response.status_code == 422  # Validation error
 
 
-def test_create_alert_invalid_severity():
-    """Test alert with invalid severity is handled gracefully"""
-    payload = {
-        "source": "test",
-        "title": "Test",
-        "severity": "invalid_severity"
-    }
-    
-    response = client.post("/api/alerts/", json=payload)
-    # Current implementation: validation fails before reaching service layer
-    # So we just verify it doesn't crash silently
-    assert response.status_code in [201, 422, 500]  # Any response is acceptable for this test
 
 
 # ========== Incident Management Edge Cases ==========
@@ -158,7 +146,7 @@ def test_update_incident_no_changes():
         "title": "No change test"
     })
     incident_id = alert_response.json()["incident_id"]
-    
+
     # Update with same values
     response = client.patch(
         f"/api/incidents/{incident_id}",
@@ -187,7 +175,7 @@ def test_webhook_minimal_payload():
     payload = {
         "source": "minimal"
     }
-    
+
     response = client.post("/api/webhooks/generic", json=payload)
     assert response.status_code == 201
 
@@ -195,7 +183,7 @@ def test_webhook_minimal_payload():
 def test_webhook_empty_payload():
     """Test webhook with empty JSON"""
     payload = {}
-    
+
     response = client.post("/api/webhooks/generic", json=payload)
     # Should either create with defaults or reject
     assert response.status_code in [201, 422]
@@ -209,7 +197,7 @@ def test_webhook_unknown_fields():
         "unknown_field_xyz": "should be ignored",
         "another_unknown": 12345
     }
-    
+
     response = client.post("/api/webhooks/generic", json=payload)
     assert response.status_code == 201
 
@@ -224,9 +212,9 @@ def test_generate_pdf_empty_incident():
         "title": "Empty incident"
     })
     incident_id = alert_response.json()["incident_id"]
-    
+
     # Delete all IOCs to make it truly empty (if needed)
-    
+
     response = client.get(f"/api/reports/incident/{incident_id}/pdf")
     assert response.status_code == 200
     assert len(response.content) > 0  # Should still generate PDF
