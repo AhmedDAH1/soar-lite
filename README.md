@@ -50,6 +50,58 @@ SOAR-Lite includes a web-based dashboard for incident management:
 - **One-click status updates** - Enforce workflow validation
 - **IOC enrichment** - Trigger threat intelligence lookups from UI
 
+
+## 🔗 Webhook Integration
+
+SOAR-Lite accepts real-time alerts from external security tools via webhooks.
+
+### Supported Sources
+- **SIEM** (Splunk, QRadar, ELK) - `/api/webhooks/siem`
+- **EDR** (CrowdStrike, SentinelOne) - `/api/webhooks/edr`
+- **Email Gateway** (Proofpoint, Mimecast) - `/api/webhooks/email`
+- **Generic** (Custom tools) - `/api/webhooks/generic`
+
+### Example: Configure Splunk to Send Alerts
+
+```bash
+# Splunk webhook action
+curl -X POST http://your-soar.com/api/webhooks/siem \
+  -H "Content-Type: application/json" \
+  -d '{
+    "search_name": "$alert_name$",
+    "result": $result$,
+    "severity": "$severity$"
+  }'
+```
+
+### Example: Custom Tool Integration
+
+```python
+import requests
+
+# Your security scanner finds a vulnerability
+alert = {
+    "source": "vuln_scanner",
+    "title": "SQL Injection Found",
+    "severity": "high",
+    "raw_data": {
+        "url": "/api/login",
+        "vulnerability": "SQLi",
+        "cvss": 8.5
+    }
+}
+
+# Send to SOAR-Lite
+requests.post("http://localhost:8000/api/webhooks/generic", json=alert)
+```
+
+### Workflow
+1. External tool sends webhook → SOAR-Lite receives alert
+2. IOCs auto-extracted from alert data
+3. Incident auto-created
+4. Enrichment runs (optional)
+5. Playbooks execute automatically
+6. Analyst notified via dashboard
 ### Screenshots
 
 *Dashboard Homepage:*
