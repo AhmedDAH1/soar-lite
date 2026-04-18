@@ -33,3 +33,12 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Coverage reports
+htmlcov/
+.coverage
+coverage.xml
+.pytest_cache/
+
+# Ruff cache
+.ruff_cache/

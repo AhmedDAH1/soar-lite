@@ -5,13 +5,12 @@ client = TestClient(app)
 
 
 def test_root_endpoint():
-    """Test the root endpoint returns correct app info"""
+    """Test the root endpoint serves dashboard HTML"""
     response = client.get("/")
     assert response.status_code == 200
-    data = response.json()
-    assert data["app"] == "SOAR-Lite"
-    assert data["status"] == "operational"
-
+    # Root now serves HTML dashboard, not JSON
+    assert response.headers["content-type"].startswith("text/html")
+    assert len(response.content) > 0  # Should return HTML content
 
 def test_health_check():
     """Test the health check endpoint"""
