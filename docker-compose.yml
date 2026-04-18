@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: soar-lite-db
+    environment:
+      POSTGRES_DB: soar_lite
+      POSTGRES_USER: soar_user
+      POSTGRES_PASSWORD: changeme_in_production
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U soar_user -d soar_lite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # SOAR-Lite Application
+  web:
+    build: .
+    container_name: soar-lite-web
+    environment:
+      # Database
+      DATABASE_URL: postgresql://soar_user:changeme_in_production@db:5432/soar_lite
+
+      # Application
+      APP_NAME: SOAR-Lite
+      DEBUG: "false"
+
+      # API Keys (set these for production)
+      VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
+      ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./static:/app/static
+      - ./playbooks:/app/playbooks
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

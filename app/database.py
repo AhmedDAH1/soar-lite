@@ -1,14 +1,17 @@
 from sqlalchemy import create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
+
 from app.config import get_settings
 
 settings = get_settings()
 
 # Create database engine
+# Works with both SQLite and PostgreSQL
 engine = create_engine(
     settings.DATABASE_URL,
-    connect_args={"check_same_thread": False}  # Needed for SQLite
+    connect_args={"check_same_thread": False} if "sqlite" in settings.DATABASE_URL else {},
+    pool_pre_ping=True  # Verify connections before using
 )
 
 # Create session factory
