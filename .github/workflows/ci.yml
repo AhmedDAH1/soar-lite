@@ -12,7 +12,6 @@ jobs:
 
     env:
       CI: true
-      DATABASE_URL: sqlite:///./test_soar_lite.db
 
     steps:
     - uses: actions/checkout@v4
@@ -27,14 +26,10 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    - name: Initialize database
-      run: |
-        alembic upgrade head
-
     - name: Run linting
       run: |
         ruff check app/ tests/ || true
 
-    - name: Run tests (skip integration tests)
+    - name: Run tests (database auto-created by FastAPI on first test)
       run: |
         pytest -v --tb=short
