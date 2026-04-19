@@ -437,12 +437,6 @@ For issues or questions:
 
 ---
 
-## 📸 Screenshots
-
-*Coming soon: Dashboard, incident detail view, reports*
-
----
-
 ## 🎓 Educational Use
 
 This project is ideal for:
