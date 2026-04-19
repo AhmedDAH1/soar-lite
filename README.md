@@ -22,6 +22,22 @@ SOAR-Lite is a portfolio cybersecurity project demonstrating:
 Built to showcase skills needed for **SOC Analyst** and **Security Engineer** positions.
 
 ---
+## 🎬 Live Demo Video
+
+[![SOAR-Lite Demo](https://img.shields.io/badge/▶️_Watch_Demo-YouTube-red?style=for-the-badge)](https://youtu.be/Wade9SSN-Ts)
+
+**6-minute complete walkthrough** showing the full incident response workflow from alert ingestion to final report.
+
+**What you'll see:**
+- Real-time webhook alert from simulated EDR
+- Automatic IOC extraction and enrichment
+- VirusTotal integration detecting actual malware (67/69 engines)
+- Automated playbook escalating severity
+- Professional PDF report generation
+
+[**→ Watch the Demo**](https://youtu.be/Wade9SSN-Ts)
+
+---
 
 ## 🚀 Quick Start
 
