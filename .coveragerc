@@ -1,0 +1,4 @@
+[run]
+omit =
+    app/seed.py
+    app/main.py
