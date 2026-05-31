@@ -56,6 +56,12 @@ async def startup_event():
     print(f"🚀 {settings.APP_NAME} v{settings.APP_VERSION} started")
     print(f"📊 Database: {settings.DATABASE_URL.split('@')[-1] if '@' in settings.DATABASE_URL else 'SQLite'}")
 
+    # Seed demo data on the hosted demo (ephemeral DB starts empty each cold start).
+    import os
+    if os.environ.get("SEED_DEMO", "0") == "1":
+        from app.seed import seed_demo_data
+        seed_demo_data()
+
 
 @app.get("/")
 async def root():
