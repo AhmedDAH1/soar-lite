@@ -28,7 +28,7 @@ jobs:
 
     - name: Run linting
       run: |
-        ruff check app/ tests/ || true
+        ruff check app/ tests/
 
     - name: Run tests (database auto-created by FastAPI on first test)
       run: |

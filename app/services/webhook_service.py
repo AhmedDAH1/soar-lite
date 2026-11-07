@@ -1,6 +1,7 @@
 import hashlib
 import hmac
-from typing import Optional, Dict, Any
+from typing import Any
+
 from app.config import get_settings
 
 settings = get_settings()
@@ -10,26 +11,26 @@ class WebhookService:
     """
     Webhook validation and processing service.
     """
-    
+
     @staticmethod
     def validate_signature(payload: str, signature: str, secret: str) -> bool:
         """
         Validate webhook signature using HMAC-SHA256.
-        
+
         This prevents attackers from sending fake alerts to your SOAR platform.
-        
+
         Args:
             payload: Raw request body (string)
             signature: Signature from X-Webhook-Signature header
             secret: Shared secret key
-            
+
         Returns:
             True if signature is valid
-            
+
         Example:
             # Sending system computes:
             signature = HMAC-SHA256(payload, secret_key)
-            
+
             # We verify:
             expected = HMAC-SHA256(payload, secret_key)
             return signature == expected
@@ -37,22 +38,22 @@ class WebhookService:
         if not secret:
             # If no secret configured, skip validation (dev mode)
             return True
-        
+
         # Compute expected signature
         expected_signature = hmac.new(
             secret.encode('utf-8'),
             payload.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
-        
+
         # Constant-time comparison (prevents timing attacks)
         return hmac.compare_digest(signature, expected_signature)
-    
+
     @staticmethod
-    def parse_siem_alert(data: Dict[str, Any]) -> Dict[str, Any]:
+    def parse_siem_alert(data: dict[str, Any]) -> dict[str, Any]:
         """
         Parse Splunk-style SIEM alert format.
-        
+
         Example Splunk webhook:
         {
           "search_name": "Failed SSH Logins",
@@ -70,12 +71,12 @@ class WebhookService:
             'severity': data.get('severity', 'medium'),
             'raw_data': data.get('result', {})
         }
-    
+
     @staticmethod
-    def parse_edr_alert(data: Dict[str, Any]) -> Dict[str, Any]:
+    def parse_edr_alert(data: dict[str, Any]) -> dict[str, Any]:
         """
         Parse CrowdStrike/EDR-style alert format.
-        
+
         Example EDR webhook:
         {
           "alert_type": "malware_detected",
@@ -91,12 +92,12 @@ class WebhookService:
             'severity': data.get('severity', 'high'),
             'raw_data': data
         }
-    
+
     @staticmethod
-    def parse_email_alert(data: Dict[str, Any]) -> Dict[str, Any]:
+    def parse_email_alert(data: dict[str, Any]) -> dict[str, Any]:
         """
         Parse email phishing report format.
-        
+
         Example email gateway webhook:
         {
           "from": "attacker@evil.com",
@@ -112,12 +113,12 @@ class WebhookService:
             'severity': 'medium',
             'raw_data': data
         }
-    
+
     @staticmethod
-    def parse_generic_alert(data: Dict[str, Any]) -> Dict[str, Any]:
+    def parse_generic_alert(data: dict[str, Any]) -> dict[str, Any]:
         """
         Parse generic webhook format (fallback).
-        
+
         Handles any JSON with common fields like:
         - title/summary/name
         - description/message/details
@@ -125,13 +126,13 @@ class WebhookService:
         """
         # Try to find a title
         title = (
-            data.get('title') or 
-            data.get('summary') or 
-            data.get('name') or 
+            data.get('title') or
+            data.get('summary') or
+            data.get('name') or
             data.get('alert_name') or
             'Generic Webhook Alert'
         )
-        
+
         # Try to find description
         description = (
             data.get('description') or
@@ -139,7 +140,7 @@ class WebhookService:
             data.get('details') or
             str(data)[:200]
         )
-        
+
         # Try to find severity
         severity = (
             data.get('severity') or
@@ -147,7 +148,7 @@ class WebhookService:
             data.get('risk_level') or
             'medium'
         )
-        
+
         return {
             'source': data.get('source', 'webhook'),
             'title': title,

@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
@@ -14,10 +15,10 @@ def test_generate_pdf_report():
         "severity": "high"
     })
     incident_id = alert_response.json()["incident_id"]
-    
+
     # Generate PDF report
     response = client.get(f"/api/reports/incident/{incident_id}/pdf")
-    
+
     assert response.status_code == 200
     assert response.headers["content-type"] == "application/pdf"
     assert "attachment" in response.headers["content-disposition"]
@@ -33,10 +34,10 @@ def test_generate_docx_report():
         "severity": "medium"
     })
     incident_id = alert_response.json()["incident_id"]
-    
+
     # Generate DOCX report
     response = client.get(f"/api/reports/incident/{incident_id}/docx")
-    
+
     assert response.status_code == 200
     assert "wordprocessingml" in response.headers["content-type"]
     assert "attachment" in response.headers["content-disposition"]

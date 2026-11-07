@@ -1,6 +1,6 @@
-from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional
+
+from pydantic import BaseModel
 
 
 class ActionResponse(BaseModel):
@@ -9,9 +9,9 @@ class ActionResponse(BaseModel):
     incident_id: int
     action_type: str
     description: str
-    playbook_name: Optional[str]
+    playbook_name: str | None
     performed_by: str
     created_at: datetime
-    
+
     class Config:
         from_attributes = True

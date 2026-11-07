@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+
 from app.main import app
 
 client = TestClient(app)
@@ -20,12 +21,12 @@ def test_filter_incidents_by_severity():
         "severity": "critical"
     }
     client.post("/api/alerts/", json=alert)
-    
+
     # Filter for critical
     response = client.get("/api/incidents/?severity=critical")
     assert response.status_code == 200
     incidents = response.json()
-    
+
     # All returned incidents should be critical
     for incident in incidents:
         assert incident["severity"] == "critical"
@@ -41,11 +42,11 @@ def test_get_incident_detail():
         "severity": "medium"
     })
     incident_id = alert_response.json()["incident_id"]
-    
+
     # Get details
     response = client.get(f"/api/incidents/{incident_id}")
     assert response.status_code == 200
-    
+
     data = response.json()
     assert data["id"] == incident_id
     assert "alerts" in data
@@ -63,7 +64,7 @@ def test_update_incident_status():
         "severity": "low"
     })
     incident_id = alert_response.json()["incident_id"]
-    
+
     # Update to investigating
     response = client.patch(
         f"/api/incidents/{incident_id}",
@@ -83,13 +84,13 @@ def test_invalid_status_transition():
         "severity": "low"
     })
     incident_id = alert_response.json()["incident_id"]
-    
+
     # Try to jump to RESOLVED (invalid)
     response = client.patch(
         f"/api/incidents/{incident_id}",
         json={"status": "resolved"}
     )
-    
+
     # Request succeeds but status doesn't change
     assert response.status_code == 200
     assert response.json()["status"] == "new"  # Still NEW
@@ -103,12 +104,12 @@ def test_search_incidents():
         "title": "Unique_Search_Term_12345",
         "severity": "low"
     })
-    
+
     # Search for it
     response = client.get("/api/incidents/?search=Unique_Search_Term_12345")
     assert response.status_code == 200
     incidents = response.json()
-    
+
     assert len(incidents) > 0
     assert "Unique_Search_Term_12345" in incidents[0]["title"]
 
@@ -117,7 +118,7 @@ def test_get_statistics():
     """Test statistics endpoint"""
     response = client.get("/api/incidents/statistics")
     assert response.status_code == 200
-    
+
     stats = response.json()
     assert "total_incidents" in stats
     assert "by_status" in stats

@@ -1,6 +1,6 @@
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List
 
 from app.database import get_db
 from app.schemas.alert import AlertCreate, AlertResponse
@@ -19,9 +19,9 @@ def create_alert(
 ):
     """
     Ingest a new security alert.
-    
+
     Automatically creates a linked incident for investigation tracking.
-    
+
     **Example request:**
 ```json
     {
@@ -41,4 +41,5 @@ def create_alert(
         db_alert = create_alert_with_incident(db, alert)
         return db_alert
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to create alert: {str(e)}")
+        # Don't send internal error details to the client
+        raise HTTPException(status_code=500, detail="Failed to create alert") from e

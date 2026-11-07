@@ -9,7 +9,7 @@ def test_evaluate_condition_equals():
         "value": "ip"
     }
     context = {"ioc": {"type": "ip"}}
-    
+
     assert PlaybookEngine.evaluate_condition(condition, context) is True
 
 
@@ -21,7 +21,7 @@ def test_evaluate_condition_in():
         "value": ["md5", "sha256"]
     }
     context = {"ioc": {"type": "md5"}}
-    
+
     assert PlaybookEngine.evaluate_condition(condition, context) is True
 
 
@@ -39,7 +39,7 @@ def test_evaluate_condition_greater_than():
             }
         }
     }
-    
+
     assert PlaybookEngine.evaluate_condition(condition, context) is True
 
 
@@ -52,7 +52,7 @@ def test_get_nested_value():
             }
         }
     }
-    
+
     value = PlaybookEngine._get_nested_value(data, "enrichment_data.virustotal.malicious")
     assert value == 10
 
@@ -60,10 +60,10 @@ def test_get_nested_value():
 def test_load_playbooks():
     """Test loading playbooks from YAML files"""
     playbooks = PlaybookEngine.load_playbooks()
-    
+
     # Should load at least the 3 playbooks we created
     assert len(playbooks) >= 3
-    
+
     # Check playbook structure
     for playbook in playbooks:
         assert "name" in playbook

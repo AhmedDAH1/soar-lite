@@ -1,12 +1,11 @@
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Dict
 
 from app.database import get_db
-from app.services.playbook_engine import PlaybookEngine
-
-from app.schemas.action import ActionResponse
 from app.models import Action
+from app.schemas.action import ActionResponse
+from app.services.playbook_engine import PlaybookEngine
 
 router = APIRouter(
     prefix="/api/playbooks",
@@ -14,15 +13,15 @@ router = APIRouter(
 )
 
 
-@router.get("/", response_model=List[Dict])
+@router.get("/", response_model=list[dict])
 def list_playbooks():
     """
     List all enabled playbooks.
-    
+
     Returns playbook metadata (name, description, conditions, actions).
     """
     playbooks = PlaybookEngine.load_playbooks()
-    
+
     # Return simplified view
     return [
         {
@@ -37,36 +36,36 @@ def list_playbooks():
     ]
 
 
-@router.post("/execute/{incident_id}", response_model=Dict)
+@router.post("/execute/{incident_id}", response_model=dict)
 def execute_playbooks(
     incident_id: int,
     db: Session = Depends(get_db)
 ):
     """
     Manually execute all playbooks against an incident.
-    
+
     Typically called after enrichment completes, but can be triggered manually
     by analysts to re-run automation rules.
     """
     results = PlaybookEngine.run_playbooks_for_incident(incident_id, db)
-    
+
     if "error" in results:
         raise HTTPException(status_code=404, detail=results["error"])
-    
+
     return results
 
-@router.get("/timeline/{incident_id}", response_model=List[ActionResponse])
+@router.get("/timeline/{incident_id}", response_model=list[ActionResponse])
 def get_incident_timeline(
     incident_id: int,
     db: Session = Depends(get_db)
 ):
     """
     Get chronological timeline of all actions for an incident.
-    
+
     Shows both automated (playbook) and manual actions.
     """
     actions = db.query(Action).filter(
         Action.incident_id == incident_id
     ).order_by(Action.created_at.asc()).all()
-    
+
     return actions

@@ -1,4 +1,5 @@
 import pytest
+
 from app.services.enrichment_service import EnrichmentService
 
 
@@ -7,7 +8,7 @@ async def test_enrich_ip():
     """Test IP enrichment (requires valid API keys)"""
     # Using Google DNS (should be harmless)
     enrichment = await EnrichmentService.enrich_ip("8.8.8.8")
-    
+
     # Should have geolocation at minimum (no API key required)
     assert "geolocation" in enrichment
     assert enrichment["geolocation"]["country"] is not None
@@ -19,7 +20,7 @@ async def test_enrich_hash_not_found():
     # Random hash not in VirusTotal database
     fake_hash = "00000000000000000000000000000000"
     enrichment = await EnrichmentService.enrich_hash(fake_hash)
-    
+
     # Should get response even if not found
     if enrichment.get("virustotal"):
         assert enrichment["virustotal"].get("status") == "not_found"
@@ -33,7 +34,7 @@ def test_determine_malicious_status_virustotal():
             "suspicious": 2
         }
     }
-    
+
     is_malicious = EnrichmentService.determine_malicious_status(enrichment_data)
     assert is_malicious is True
 
@@ -45,7 +46,7 @@ def test_determine_malicious_status_abuseipdb():
             "abuse_confidence_score": 90
         }
     }
-    
+
     is_malicious = EnrichmentService.determine_malicious_status(enrichment_data)
     assert is_malicious is True
 
@@ -61,6 +62,6 @@ def test_determine_malicious_status_harmless():
             "abuse_confidence_score": 0
         }
     }
-    
+
     is_malicious = EnrichmentService.determine_malicious_status(enrichment_data)
     assert is_malicious is False

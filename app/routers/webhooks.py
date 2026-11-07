@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Header
+from typing import Any
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
-from typing import Optional, Dict, Any
 
 from app.database import get_db
-from app.schemas.alert import WebhookAlert, AlertResponse
+from app.schemas.alert import AlertResponse, WebhookAlert
 from app.services.alert_service import create_alert_with_incident
 from app.services.webhook_service import WebhookService
 
@@ -16,17 +17,17 @@ router = APIRouter(
 @router.post("/generic", response_model=AlertResponse, status_code=201)
 async def receive_generic_webhook(
     request: Request,
-    webhook_data: Dict[str, Any],
-    x_webhook_signature: Optional[str] = Header(None),
+    webhook_data: dict[str, Any],
+    x_webhook_signature: str | None = Header(None),
     db: Session = Depends(get_db)
 ):
     """
     Generic webhook endpoint for any alert source.
-    
+
     Accepts flexible JSON format and auto-maps to internal alert schema.
-    
+
     **Example payloads:**
-    
+
     Minimal:
 ```json
     {
@@ -34,7 +35,7 @@ async def receive_generic_webhook(
       "title": "Vulnerability detected"
     }
 ```
-    
+
     Full:
 ```json
     {
@@ -45,7 +46,7 @@ async def receive_generic_webhook(
       "raw_data": {"src_ip": "1.2.3.4", "attempts": 5}
     }
 ```
-    
+
     **Signature Validation (Optional):**
     Include X-Webhook-Signature header for validation:
     X-Webhook-Signature: <HMAC-SHA256 of request body>
@@ -54,33 +55,33 @@ async def receive_generic_webhook(
     if x_webhook_signature:
         body = await request.body()
         secret = "your_webhook_secret"  # In production, load from settings
-        
+
         if not WebhookService.validate_signature(body.decode(), x_webhook_signature, secret):
             raise HTTPException(status_code=401, detail="Invalid webhook signature")
-    
+
     # Parse generic format
     parsed = WebhookService.parse_generic_alert(webhook_data)
-    
+
     # Convert to WebhookAlert schema
     webhook_alert = WebhookAlert(**parsed)
-    
+
     # Convert to AlertCreate
     alert_create = webhook_alert.to_alert_create()
-    
+
     # Create incident
     db_alert = create_alert_with_incident(db, alert_create)
-    
+
     return db_alert
 
 
 @router.post("/siem", response_model=AlertResponse, status_code=201)
 def receive_siem_webhook(
-    webhook_data: Dict[str, Any],
+    webhook_data: dict[str, Any],
     db: Session = Depends(get_db)
 ):
     """
     SIEM-specific webhook endpoint (Splunk, QRadar, etc).
-    
+
     **Example Splunk alert:**
 ```json
     {
@@ -98,18 +99,18 @@ def receive_siem_webhook(
     webhook_alert = WebhookAlert(**parsed)
     alert_create = webhook_alert.to_alert_create()
     db_alert = create_alert_with_incident(db, alert_create)
-    
+
     return db_alert
 
 
 @router.post("/edr", response_model=AlertResponse, status_code=201)
 def receive_edr_webhook(
-    webhook_data: Dict[str, Any],
+    webhook_data: dict[str, Any],
     db: Session = Depends(get_db)
 ):
     """
     EDR-specific webhook endpoint (CrowdStrike, SentinelOne, etc).
-    
+
     **Example CrowdStrike alert:**
 ```json
     {
@@ -125,18 +126,18 @@ def receive_edr_webhook(
     webhook_alert = WebhookAlert(**parsed)
     alert_create = webhook_alert.to_alert_create()
     db_alert = create_alert_with_incident(db, alert_create)
-    
+
     return db_alert
 
 
 @router.post("/email", response_model=AlertResponse, status_code=201)
 def receive_email_webhook(
-    webhook_data: Dict[str, Any],
+    webhook_data: dict[str, Any],
     db: Session = Depends(get_db)
 ):
     """
     Email gateway webhook endpoint (Proofpoint, Mimecast, etc).
-    
+
     **Example phishing report:**
 ```json
     {
@@ -153,5 +154,5 @@ def receive_email_webhook(
     webhook_alert = WebhookAlert(**parsed)
     alert_create = webhook_alert.to_alert_create()
     db_alert = create_alert_with_incident(db, alert_create)
-    
+
     return db_alert

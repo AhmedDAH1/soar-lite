@@ -1,6 +1,7 @@
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, Dict, Any
 from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class AlertCreate(BaseModel):
@@ -10,15 +11,15 @@ class AlertCreate(BaseModel):
     """
     source: str = Field(..., min_length=1, max_length=100, description="Alert source (e.g., 'siem', 'edr')")
     title: str = Field(..., min_length=1, max_length=255, description="Alert title/summary")
-    description: Optional[str] = Field(None, description="Detailed alert description")
-    raw_data: Optional[Dict[str, Any]] = Field(None, description="Raw alert data from source")
-    severity: Optional[str] = Field("medium", description="Incident severity (low/medium/high/critical)")
+    description: str | None = Field(None, description="Detailed alert description")
+    raw_data: dict[str, Any] | None = Field(None, description="Raw alert data from source")
+    severity: str | None = Field("medium", description="Incident severity (low/medium/high/critical)")
 
 
 class WebhookAlert(BaseModel):
     """
     Schema for webhook-based alerts (flexible format).
-    
+
     Maps external alert formats to our internal AlertCreate schema.
     Supports multiple naming conventions:
     - title/summary/alert_name
@@ -27,48 +28,48 @@ class WebhookAlert(BaseModel):
     """
     # Required fields (flexible naming)
     source: str = Field(..., description="Source system (e.g., 'splunk', 'crowdstrike')")
-    
+
     # Title variations (at least one required)
-    title: Optional[str] = None
-    summary: Optional[str] = None
-    alert_name: Optional[str] = None
-    
+    title: str | None = None
+    summary: str | None = None
+    alert_name: str | None = None
+
     # Description variations (optional)
-    description: Optional[str] = None
-    message: Optional[str] = None
-    details: Optional[str] = None
-    
+    description: str | None = None
+    message: str | None = None
+    details: str | None = None
+
     # Severity variations (optional)
-    severity: Optional[str] = None
-    priority: Optional[str] = None
-    risk_level: Optional[str] = None
-    
+    severity: str | None = None
+    priority: str | None = None
+    risk_level: str | None = None
+
     # Catch-all for extra fields
-    raw_data: Optional[Dict[str, Any]] = None
-    
+    raw_data: dict[str, Any] | None = None
+
     @field_validator('source')
     @classmethod
     def validate_source(cls, v):
         """Ensure source is lowercase"""
         return v.lower()
-    
+
     def to_alert_create(self) -> AlertCreate:
         """
         Convert webhook format to AlertCreate format.
-        
+
         Intelligently maps flexible field names to standard schema.
         """
         # Determine title (try multiple field names)
         title = self.title or self.summary or self.alert_name
         if not title:
             title = f"Alert from {self.source}"
-        
+
         # Determine description
         description = self.description or self.message or self.details
-        
+
         # Determine severity
         severity = self.severity or self.priority or self.risk_level or "medium"
-        
+
         # Normalize severity (different systems use different terms)
         severity_map = {
             'critical': 'critical',
@@ -86,7 +87,7 @@ class WebhookAlert(BaseModel):
             'urgent': 'critical'
         }
         severity = severity_map.get(severity.lower(), 'medium')
-        
+
         return AlertCreate(
             source=self.source,
             title=title,
@@ -105,9 +106,9 @@ class AlertResponse(BaseModel):
     incident_id: int
     source: str
     title: str
-    description: Optional[str]
-    raw_data: Optional[Dict[str, Any]]
+    description: str | None
+    raw_data: dict[str, Any] | None
     created_at: datetime
-    
+
     class Config:
         from_attributes = True

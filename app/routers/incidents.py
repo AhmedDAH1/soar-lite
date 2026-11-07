@@ -1,11 +1,11 @@
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
 
 from app.database import get_db
-from app.schemas.incident import IncidentResponse, IncidentDetailResponse, IncidentUpdate
-from app.services.incident_service import IncidentService
 from app.models import Incident
+from app.schemas.incident import IncidentDetailResponse, IncidentResponse, IncidentUpdate
+from app.services.incident_service import IncidentService
 
 router = APIRouter(
     prefix="/api/incidents",
@@ -13,20 +13,20 @@ router = APIRouter(
 )
 
 
-@router.get("/", response_model=List[IncidentResponse])
+@router.get("/", response_model=list[IncidentResponse])
 def list_incidents(
-    severity: Optional[str] = Query(None, description="Filter by severity (low/medium/high/critical)"),
-    status: Optional[str] = Query(None, description="Filter by status (new/investigating/contained/resolved)"),
-    search: Optional[str] = Query(None, description="Search in title/description"),
-    ioc_value: Optional[str] = Query(None, description="Find incidents with this IOC"),
-    days: Optional[int] = Query(None, description="Only incidents from last N days"),
+    severity: str | None = Query(None, description="Filter by severity (low/medium/high/critical)"),
+    status: str | None = Query(None, description="Filter by status (new/investigating/contained/resolved)"),
+    search: str | None = Query(None, description="Search in title/description"),
+    ioc_value: str | None = Query(None, description="Find incidents with this IOC"),
+    days: int | None = Query(None, description="Only incidents from last N days"),
     limit: int = Query(100, le=500, description="Max results (max 500)"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
     db: Session = Depends(get_db)
 ):
     """
     List incidents with optional filtering and search.
-    
+
     **Examples:**
     - `/api/incidents?severity=critical` - All critical incidents
     - `/api/incidents?status=new&days=7` - New incidents from last week
@@ -43,7 +43,7 @@ def list_incidents(
         limit=limit,
         offset=offset
     )
-    
+
     return incidents
 
 
@@ -51,7 +51,7 @@ def list_incidents(
 def get_statistics(db: Session = Depends(get_db)):
     """
     Get incident statistics for dashboard.
-    
+
     Returns counts by severity, status, and key metrics.
     """
     stats = IncidentService.get_statistics(db)
@@ -67,10 +67,10 @@ def get_incident(
     Get full incident details including alerts, IOCs, and timeline.
     """
     incident = db.query(Incident).filter(Incident.id == incident_id).first()
-    
+
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
-    
+
     return incident
 
 
@@ -83,7 +83,7 @@ def update_incident(
 ):
     """
     Update incident fields.
-    
+
     **Examples:**
 ```json
     {
@@ -92,7 +92,7 @@ def update_incident(
       "description": "Updated description with analyst notes"
     }
 ```
-    
+
     All fields are optional - only send fields you want to update.
     Status transitions are validated (e.g., can't go from NEW to RESOLVED).
     """
@@ -102,8 +102,8 @@ def update_incident(
         updates=updates,
         analyst_username=analyst_username
     )
-    
+
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
-    
+
     return incident
