@@ -5,8 +5,7 @@
 
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Online-success?style=flat-square)](https://soar-lite.onrender.com)
 ![CI](https://github.com/AhmedDAH1/soar-lite/actions/workflows/ci.yml/badge.svg)
-[![Tests](https://img.shields.io/badge/tests-53%20passing-brightgreen?style=flat-square)](https://github.com/AhmedDAH1/soar-lite/actions)
-[![Coverage](https://img.shields.io/badge/coverage-84%25-brightgreen?style=flat-square)](https://github.com/AhmedDAH1/soar-lite)
+[![Release](https://img.shields.io/github/v/release/AhmedDAH1/soar-lite?style=flat-square)](https://github.com/AhmedDAH1/soar-lite/releases/latest)
 [![Python](https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python)](https://www.python.org/)
 [![Docker](https://img.shields.io/badge/Docker-ready-blue?style=flat-square&logo=docker)](Dockerfile)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat-square)](LICENSE)
@@ -54,21 +53,27 @@ uvicorn app.main:app --reload
 open http://127.0.0.1:8000
 ```
 
-The app is database-agnostic via SQLAlchemy — it uses SQLite by default and PostgreSQL when `DATABASE_URL` points at a Postgres instance. The [live demo](https://soar-lite.onrender.com) runs on SQLite with `SEED_DEMO=1` to populate sample incidents on startup.
+The app is database-agnostic via SQLAlchemy — it uses SQLite by default and PostgreSQL when `DATABASE_URL` points at a Postgres instance. The [live demo](https://soar-lite.onrender.com) runs on SQLite with `DEMO_MODE=true`, which seeds sample incidents on startup and makes the instance read-only.
+
+To receive alerts by webhook, set a shared secret first (webhooks are refused without one):
+
+```bash
+export WEBHOOK_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+```
 
 ---
 
 ## Features
 
 **Alert Ingestion & Processing**
-- REST API for alert creation, plus webhook endpoints for SIEM, EDR, and email-gateway formats
+- REST API for alert creation, plus signed webhook endpoints for SIEM, EDR, and email-gateway formats
 - Flexible JSON parsing that maps multiple vendor naming conventions to one internal schema
 - Automatic incident creation and linking
 
 **IOC Extraction & Enrichment**
 - Regex-based extraction of IPs, domains, file hashes, and emails from alert text
 - VirusTotal (malware/domain reputation), AbuseIPDB (IP abuse scoring), and IP geolocation
-- RFC 1918 private-IP filtering so internal addresses aren't sent to external APIs
+- Internal (RFC 1918) addresses are kept as IOCs but never sent to external APIs
 
 **Automated Playbook System**
 - YAML-defined playbooks with conditional logic (e.g. *if malicious → escalate*)
@@ -118,12 +123,45 @@ SOAR-Lite follows a layered pipeline: **Ingestion → Processing → Storage →
 | Enrichment | aiohttp | Async HTTP client for external APIs |
 | Playbooks | PyYAML | YAML rule parsing |
 | Reports | ReportLab, python-docx | PDF/DOCX generation |
-| Frontend | Vanilla JS, Tailwind, Chart.js | Dashboard UI |
-| Testing | pytest | 53 tests, 84% coverage |
+| Frontend | Vanilla JS, Tailwind (prebuilt), Chart.js (bundled) | Dashboard UI |
+| Testing | pytest | 88 tests, including security tests |
 | CI/CD | GitHub Actions | Automated test pipeline |
 | Containers | Docker, Docker Compose | Deployment |
 
 **Design principles:** modular components (IOC extraction, enrichment, playbooks are independent), async-first enrichment for concurrent API calls, database-agnostic via SQLAlchemy, stateless API endpoints, and event-driven incident creation from webhooks.
+
+---
+
+## Sending alerts
+
+Alerts arrive on four webhook endpoints: `/api/webhooks/siem`, `/edr`,
+`/email` and `/generic`. Every request must be signed with the shared
+`WEBHOOK_SECRET`, so nobody else can create incidents:
+
+```
+X-Webhook-Timestamp: <unix time in seconds>
+X-Webhook-Signature: sha256=<hex HMAC-SHA256 of "<timestamp>." followed by the raw body>
+```
+
+The timestamp is part of what's signed, and requests more than five minutes
+old are refused, so a captured request can't be replayed. Unsigned or
+tampered requests get `401`. In Python:
+
+```python
+import hashlib, hmac, json, time, requests
+
+body = json.dumps({"search_name": "Port scan", "severity": "high",
+                   "description": "Scan from 203.0.113.7"}).encode()
+ts = int(time.time())
+sig = hmac.new(SECRET.encode(), f"{ts}.".encode() + body, hashlib.sha256).hexdigest()
+requests.post("http://localhost:8000/api/webhooks/siem", data=body, headers={
+    "Content-Type": "application/json",
+    "X-Webhook-Timestamp": str(ts),
+    "X-Webhook-Signature": f"sha256={sig}",
+})
+```
+
+`python tests/webhook_tester.py` sends one signed example to each endpoint.
 
 ---
 
@@ -135,19 +173,42 @@ pytest --cov=app --cov-report=html     # with coverage
 ruff check app/ tests/                 # lint
 ```
 
-53 tests passing · 84% coverage · integration tests covering the full ingestion-to-report workflow · enforced in CI on every push.
+88 tests, including integration tests covering the full ingestion-to-report
+workflow and [security tests](tests/test_security.py) that fail if any of the
+controls below is removed. Lint and tests run in CI on every push.
 
 ---
 
-## Security Features
+## Security
 
-- HMAC-SHA256 webhook signature validation
-- SQL-injection prevention via ORM parameterization
-- XSS-protection and other security response headers
-- Pydantic input validation
-- Secrets via environment variables (never hardcoded)
-- State-machine enforcement on incident status transitions
-- RFC 1918 private-IP filtering before external enrichment
+Everything SOAR-Lite displays (alert titles, descriptions, IOCs) is written by
+whoever sent the alert, and for a security tool that is often the attacker: a
+phishing email's subject line or a scanner's User-Agent ends up in an
+incident. So alert data is treated as hostile.
+
+| Threat | Defence |
+|---|---|
+| **Forged alerts.** Anyone who can reach the server creates incidents, or floods the queue to hide a real one | Every webhook must carry an HMAC-SHA256 signature over a timestamp and the body. Wrong secret, edited body or a request older than five minutes: `401`. No secret configured: webhooks are off. |
+| **Script in alert text** (stored XSS). An alert titled `<img src=x onerror=...>` runs in the analyst's browser | Every value is HTML-escaped before it's displayed. A strict Content-Security-Policy (`script-src 'self'`, no inline scripts or handlers) blocks injected code even if escaping were missed. |
+| **Markup in PDF reports.** ReportLab interprets tags in text, so alert text could break report generation or plant a clickable link | Alert text is escaped before it goes into the PDF. |
+| **Third-party code.** A compromised CDN serves script to every analyst | Chart.js and the Tailwind stylesheet are bundled in `static/vendor/`; the dashboard loads nothing from other sites. |
+| **Other websites reading incidents** | No CORS headers, so browsers keep other sites from reading the API. |
+| **Visitors changing the public demo** | `DEMO_MODE` refuses every `POST`, `PATCH`, `PUT` and `DELETE`, which also protects the enrichment API quotas. |
+
+Also: SQL queries go through the SQLAlchemy ORM (parameterised), input is
+validated with Pydantic, secrets come from environment variables, incident
+status changes follow an enforced state machine, internal (RFC 1918) addresses
+are never sent to enrichment APIs, and the API docs are off unless
+`DEBUG=true`.
+
+The [2.0.0 changelog](CHANGELOG.md) lists the vulnerabilities that were
+found and fixed.
+
+### Limitations
+
+SOAR-Lite has **no login**. Anyone who can reach it can read and change every
+incident, so run it on your own machine or a private network (Docker Compose
+publishes it on `127.0.0.1` only), or publicly only with `DEMO_MODE=true`.
 
 ---
 
@@ -161,7 +222,17 @@ Key endpoint groups: `/api/alerts`, `/api/incidents` (list, detail, update, `/st
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for the full guide (Docker, Render, database migration, security hardening). The live demo runs on Render's free tier using a Docker deploy with SQLite.
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full guide (Docker, Render, database migration, security hardening). The live demo runs on Render's free tier using a Docker deploy with SQLite and `DEMO_MODE=true`.
+
+### Rebuilding the stylesheet
+
+The dashboard uses a prebuilt Tailwind stylesheet (`static/vendor/tailwind.css`)
+instead of Tailwind's CDN script. After adding Tailwind classes to the HTML or
+JavaScript, rebuild it:
+
+```bash
+npx tailwindcss@3.4.17 -c tailwind.config.js -i static/tailwind.input.css -o static/vendor/tailwind.css --minify
+```
 
 ---
 
@@ -176,15 +247,17 @@ See [DEPLOYMENT.md](DEPLOYMENT.md) for the full guide (Docker, Render, database 
 | Rule-based automation | YAML playbook engine with conditional escalation |
 | Relational data modeling | Incidents → Alerts → IOCs → Actions, with Alembic migrations |
 | State-machine validation | Enforced incident status transitions |
+| Secure webhook design | HMAC-signed requests with replay protection |
+| Handling hostile data | Escaping, Content-Security-Policy, safe PDF generation |
 | Document generation | PDF/DOCX reports |
-| Testing & CI/CD | 53 tests, 84% coverage, GitHub Actions, pre-commit hooks |
+| Testing & CI/CD | 88 tests, lint and tests in GitHub Actions, pre-commit hooks |
 | Containerization & deployment | Docker, Docker Compose, live on Render |
 
 ---
 
 ## Future Enhancements
 
-Slack/Teams analyst notifications · JWT auth and role-based access · rate-limiting middleware · MITRE ATT&CK technique mapping · ticketing-system integration (Jira, ServiceNow).
+Slack/Teams analyst notifications · login and role-based access · rate-limiting middleware · MITRE ATT&CK technique mapping · ticketing-system integration (Jira, ServiceNow).
 
 ---
 

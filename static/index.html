@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SOAR-Lite Dashboard</title>
     
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tailwind CSS, prebuilt (see README) -->
+    <link rel="stylesheet" href="/static/vendor/tailwind.css">
     
     <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="/static/vendor/chart.umd.js"></script>
     
     <!-- Custom styles -->
     <link rel="stylesheet" href="/static/style.css">
@@ -24,12 +24,14 @@
                 <span class="text-gray-400 text-sm">Security Operations Dashboard</span>
             </div>
             <div class="flex items-center space-x-4">
-                <a href="/docs" target="_blank" class="text-gray-400 hover:text-gray-200">API Docs</a>
-                <span class="text-gray-500">|</span>
                 <span class="text-gray-400" id="clock"></span>
             </div>
         </div>
     </nav>
+
+    <div id="demo-banner" class="hidden bg-blue-900 border-b border-blue-700 text-blue-100 text-sm text-center px-6 py-2">
+        Read-only demo with sample incidents. Run SOAR-Lite locally to ingest alerts and work cases.
+    </div>
 
     <div class="max-w-7xl mx-auto px-6 py-8">
         
@@ -111,7 +113,7 @@
                 </div>
                 
                 <div class="flex items-end">
-                    <button onclick="loadIncidents()" 
+                    <button id="apply-filters"
                             class="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded">
                         Apply Filters
                     </button>
@@ -151,6 +153,7 @@
     </div>
 
     <!-- JavaScript -->
+    <script src="/static/common.js"></script>
     <script src="/static/app.js"></script>
     
 </body>

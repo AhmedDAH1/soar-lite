@@ -1,41 +1,4 @@
-// API Base URL
-const API_BASE = '';
-
-// Utility: Format date
-function formatDate(dateString) {
-    const date = new Date(dateString);
-    return date.toLocaleString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-// Utility: Get severity badge HTML
-function getSeverityBadge(severity) {
-    const colors = {
-        critical: 'bg-red-600',
-        high: 'bg-orange-600',
-        medium: 'bg-yellow-600',
-        low: 'bg-blue-600'
-    };
-    
-    return `<span class="px-2 py-1 rounded text-xs font-semibold ${colors[severity] || 'bg-gray-600'}">${severity.toUpperCase()}</span>`;
-}
-
-// Utility: Get status badge HTML
-function getStatusBadge(status) {
-    const colors = {
-        new: 'bg-blue-600',
-        investigating: 'bg-purple-600',
-        contained: 'bg-orange-600',
-        resolved: 'bg-green-600'
-    };
-    
-    return `<span class="px-2 py-1 rounded text-xs font-semibold ${colors[status] || 'bg-gray-600'}">${status.charAt(0).toUpperCase() + status.slice(1)}</span>`;
-}
+// Dashboard page. Helpers (esc, badges, dates) are in common.js.
 
 // Update clock
 function updateClock() {
@@ -204,15 +167,15 @@ async function loadIncidents() {
         }
         
         tbody.innerHTML = incidents.map(incident => `
-            <tr class="hover:bg-gray-750 cursor-pointer" onclick="window.location.href='/static/incident.html?id=${incident.id}'">
-                <td class="px-6 py-4 text-sm">#${incident.id}</td>
+            <tr class="hover:bg-gray-750 cursor-pointer" data-id="${esc(incident.id)}">
+                <td class="px-6 py-4 text-sm">#${esc(incident.id)}</td>
                 <td class="px-6 py-4">
-                    <div class="font-medium">${incident.title}</div>
-                    ${incident.description ? `<div class="text-sm text-gray-400 truncate max-w-md">${incident.description.substring(0, 80)}...</div>` : ''}
+                    <a class="font-medium hover:text-blue-300" href="/static/incident.html?id=${encodeURIComponent(incident.id)}">${esc(incident.title)}</a>
+                    ${incident.description ? `<div class="text-sm text-gray-400 truncate max-w-md">${esc(incident.description.substring(0, 80))}...</div>` : ''}
                 </td>
                 <td class="px-6 py-4">${getSeverityBadge(incident.severity)}</td>
                 <td class="px-6 py-4">${getStatusBadge(incident.status)}</td>
-                <td class="px-6 py-4 text-sm text-gray-400">${formatDate(incident.created_at)}</td>
+                <td class="px-6 py-4 text-sm text-gray-400">${esc(formatDate(incident.created_at))}</td>
             </tr>
         `).join('');
         
@@ -230,8 +193,18 @@ async function loadIncidents() {
 
 // Initialize dashboard
 document.addEventListener('DOMContentLoaded', () => {
+    applyDemoMode();
     loadStatistics();
     loadIncidents();
+
+    document.getElementById('apply-filters').addEventListener('click', loadIncidents);
+    // A click anywhere on a row opens the incident
+    document.getElementById('incidents-table').addEventListener('click', event => {
+        const row = event.target.closest('tr[data-id]');
+        if (row && !event.target.closest('a')) {
+            window.location.href = `/static/incident.html?id=${encodeURIComponent(row.dataset.id)}`;
+        }
+    });
     
     // Refresh every 30 seconds
     setInterval(() => {

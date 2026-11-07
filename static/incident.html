@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Incident Detail - SOAR-Lite</title>
     
-    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/vendor/tailwind.css">
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="bg-gray-900 text-gray-100">
@@ -20,6 +20,10 @@
             <a href="/" class="text-gray-400 hover:text-gray-200">← Back to Dashboard</a>
         </div>
     </nav>
+
+    <div id="demo-banner" class="hidden bg-blue-900 border-b border-blue-700 text-blue-100 text-sm text-center px-6 py-2">
+        Read-only demo with sample incidents. Run SOAR-Lite locally to ingest alerts and work cases.
+    </div>
 
     <div class="max-w-7xl mx-auto px-6 py-8">
         
@@ -46,29 +50,30 @@
                 <!-- Populated by JavaScript -->
             </div>
             <div class="flex space-x-2">
-                <button onclick="downloadReport('pdf')" 
+                <button data-report="pdf"
                         class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded text-sm">
                     📄 Download PDF
                 </button>
-                <button onclick="downloadReport('docx')" 
+                <button data-report="docx"
                         class="bg-gray-600 hover:bg-gray-700 px-4 py-2 rounded text-sm">
                     📝 Download DOCX
                 </button>
             </div>
         </div>
+        </div>
 
         <!-- Tabs -->
         <div class="bg-gray-800 rounded-lg border border-gray-700 mb-6">
             <div class="flex border-b border-gray-700">
-                <button onclick="showTab('alerts')" id="tab-alerts" 
+                <button data-tab="alerts" id="tab-alerts"
                         class="px-6 py-3 font-medium border-b-2 border-blue-500 text-blue-400">
                     Alerts
                 </button>
-                <button onclick="showTab('iocs')" id="tab-iocs" 
+                <button data-tab="iocs" id="tab-iocs"
                         class="px-6 py-3 font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
                     IOCs
                 </button>
-                <button onclick="showTab('timeline')" id="tab-timeline" 
+                <button data-tab="timeline" id="tab-timeline"
                         class="px-6 py-3 font-medium border-b-2 border-transparent text-gray-400 hover:text-gray-200">
                     Timeline
                 </button>
@@ -86,7 +91,7 @@
                 <div id="content-iocs" class="hidden">
                     <div class="mb-4 flex justify-between items-center">
                         <h3 class="text-lg font-semibold">Indicators of Compromise</h3>
-                        <button onclick="enrichIncident()" 
+                        <button id="enrich-iocs" data-writes
                                 class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded text-sm">
                             🔍 Enrich IOCs
                         </button>
@@ -104,6 +109,7 @@
 
     </div>
 
+    <script src="/static/common.js"></script>
     <script src="/static/incident-detail.js"></script>
     
 </body>

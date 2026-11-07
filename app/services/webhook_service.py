@@ -2,52 +2,50 @@ import hashlib
 import hmac
 from typing import Any
 
-from app.config import get_settings
-
-settings = get_settings()
+SIGNATURE_HEADER = "X-Webhook-Signature"
+TIMESTAMP_HEADER = "X-Webhook-Timestamp"
 
 
 class WebhookService:
     """
-    Webhook validation and processing service.
+    Webhook signing and payload parsing.
+
+    Every webhook request must be signed by the sender with the shared
+    WEBHOOK_SECRET, so nobody else can create incidents:
+
+        X-Webhook-Timestamp: <unix time in seconds>
+        X-Webhook-Signature: sha256=<hex HMAC-SHA256 of "<timestamp>." + raw body>
+
+    The timestamp is part of what is signed, and requests older than
+    WEBHOOK_MAX_AGE seconds are refused, so a captured request can't be
+    replayed later. This is the scheme Stripe and Slack use.
     """
 
     @staticmethod
-    def validate_signature(payload: str, signature: str, secret: str) -> bool:
-        """
-        Validate webhook signature using HMAC-SHA256.
+    def sign(body: bytes, secret: str, timestamp: int) -> str:
+        """The X-Webhook-Signature value for a request body sent at `timestamp`."""
+        message = f"{timestamp}.".encode() + body
+        return "sha256=" + hmac.new(secret.encode(), message, hashlib.sha256).hexdigest()
 
-        This prevents attackers from sending fake alerts to your SOAR platform.
-
-        Args:
-            payload: Raw request body (string)
-            signature: Signature from X-Webhook-Signature header
-            secret: Shared secret key
-
-        Returns:
-            True if signature is valid
-
-        Example:
-            # Sending system computes:
-            signature = HMAC-SHA256(payload, secret_key)
-
-            # We verify:
-            expected = HMAC-SHA256(payload, secret_key)
-            return signature == expected
-        """
-        if not secret:
-            # If no secret configured, skip validation (dev mode)
-            return True
-
-        # Compute expected signature
-        expected_signature = hmac.new(
-            secret.encode('utf-8'),
-            payload.encode('utf-8'),
-            hashlib.sha256
-        ).hexdigest()
-
-        # Constant-time comparison (prevents timing attacks)
-        return hmac.compare_digest(signature, expected_signature)
+    @staticmethod
+    def check_signature(
+        body: bytes, secret: str, timestamp: str | None, signature: str | None,
+        now: float, max_age: int,
+    ) -> str | None:
+        """None if the request is authentic, otherwise the reason it isn't."""
+        if not timestamp or not signature:
+            return f"Missing {TIMESTAMP_HEADER} or {SIGNATURE_HEADER} header"
+        try:
+            sent_at = int(timestamp)
+        except ValueError:
+            return f"Invalid {TIMESTAMP_HEADER}"
+        if abs(now - sent_at) > max_age:
+            return "Request expired: timestamp too old or too far in the future"
+        expected = WebhookService.sign(body, secret, sent_at)
+        # Constant-time comparison, so the signature can't be guessed byte by byte
+        if not hmac.compare_digest(signature.encode(), expected.encode()):
+            return "Invalid signature"
+        return None
 
     @staticmethod
     def parse_siem_alert(data: dict[str, Any]) -> dict[str, Any]:
@@ -67,7 +65,8 @@ class WebhookService:
         return {
             'source': 'siem',
             'title': data.get('search_name', 'SIEM Alert'),
-            'description': f"Correlation rule triggered: {data.get('search_name', 'Unknown')}",
+            'description': data.get('description')
+            or f"Correlation rule triggered: {data.get('search_name', 'Unknown')}",
             'severity': data.get('severity', 'medium'),
             'raw_data': data.get('result', {})
         }
@@ -109,8 +108,9 @@ class WebhookService:
         return {
             'source': 'email_gateway',
             'title': f"Phishing email: {data.get('subject', 'No subject')[:50]}",
-            'description': f"From: {data.get('from')} | To: {data.get('recipient')} | Verdict: {data.get('verdict')}",
-            'severity': 'medium',
+            'description': data.get('description')
+            or f"From: {data.get('from')} | To: {data.get('recipient')} | Verdict: {data.get('verdict')}",
+            'severity': data.get('severity', 'medium'),
             'raw_data': data
         }
 

@@ -1,6 +1,15 @@
+import ipaddress
 import re
 
 from app.models.ioc import IOCType
+
+# File extensions that aren't top-level domains: "invoice.pdf.exe" in an alert
+# is an attachment name, not a domain to look up.
+FILE_EXTENSIONS = {
+    "exe", "dll", "scr", "bat", "cmd", "vbs", "js", "jar", "hta", "lnk", "iso",
+    "pdf", "doc", "docx", "docm", "xls", "xlsx", "xlsm", "ppt", "pptx", "rtf",
+    "txt", "csv", "htm", "html",
+}
 
 
 class IOCExtractor:
@@ -24,22 +33,20 @@ class IOCExtractor:
         IOCType.SHA256: r'\b[a-fA-F0-9]{64}\b',
     }
 
-    # Private IP ranges (RFC 1918) - exclude these from extraction
-    PRIVATE_IP_PATTERNS = [
-        r'^10\.',
-        r'^172\.(1[6-9]|2[0-9]|3[0-1])\.',
-        r'^192\.168\.',
-        r'^127\.',
-        r'^169\.254\.',
-    ]
-
     @staticmethod
     def is_private_ip(ip: str) -> bool:
-        """Check if IP is in private range (RFC 1918)"""
-        for pattern in IOCExtractor.PRIVATE_IP_PATTERNS:
-            if re.match(pattern, ip):
-                return True
-        return False
+        """
+        Internal addresses (RFC 1918, loopback, link-local, ...).
+
+        They are still extracted as IOCs, since an internal host scanning the
+        network is exactly what an analyst needs to see, but they are never
+        sent to external enrichment services.
+        """
+        try:
+            address = ipaddress.ip_address(ip)
+        except ValueError:
+            return False
+        return not address.is_global
 
     @staticmethod
     def is_valid_ip(ip: str) -> bool:
@@ -79,11 +86,10 @@ class IOCExtractor:
                 value = match.lower().strip()
 
                 # Type-specific validation
-                if ioc_type == IOCType.IP:
-                    if not IOCExtractor.is_valid_ip(value):
-                        continue
-                    if IOCExtractor.is_private_ip(value):
-                        continue  # Skip private IPs (not threat intel worthy)
+                if ioc_type == IOCType.IP and not IOCExtractor.is_valid_ip(value):
+                    continue
+                if ioc_type == IOCType.DOMAIN and value.rsplit(".", 1)[-1] in FILE_EXTENSIONS:
+                    continue
 
                 # Avoid duplicates
                 ioc_key = f"{ioc_type.value}:{value}"
@@ -131,4 +137,12 @@ class IOCExtractor:
                 IOCExtractor.extract_from_text(raw_text, "alert_raw_data")
             )
 
-        return all_iocs
+        # The same indicator often appears in the title, the description and
+        # the raw data: keep one, from the first place it was found.
+        unique, seen = [], set()
+        for ioc in all_iocs:
+            key = (ioc["type"], ioc["value"])
+            if key not in seen:
+                seen.add(key)
+                unique.append(ioc)
+        return unique

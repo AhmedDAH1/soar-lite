@@ -2,15 +2,38 @@
 """
 Webhook testing tool - simulates external systems sending alerts.
 
-Usage:
-    python tests/webhook_tester.py
+Usage (with the server running and the same secret set):
+    WEBHOOK_SECRET=... python tests/webhook_tester.py
 """
 
 import json
+import os
+import sys
+import time
 
 import requests
 
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from app.services.webhook_service import (  # noqa: E402
+    SIGNATURE_HEADER,
+    TIMESTAMP_HEADER,
+    WebhookService,
+)
+
 API_BASE = "http://127.0.0.1:8000"
+SECRET = os.environ.get("WEBHOOK_SECRET", "")
+
+
+def post_signed(path, payload):
+    """Send a webhook signed the way SOAR-Lite requires (README, "Sending alerts")."""
+    body = json.dumps(payload).encode()
+    timestamp = int(time.time())
+    headers = {
+        "Content-Type": "application/json",
+        TIMESTAMP_HEADER: str(timestamp),
+        SIGNATURE_HEADER: WebhookService.sign(body, SECRET, timestamp),
+    }
+    return requests.post(f"{API_BASE}{path}", data=body, headers=headers, timeout=10)
 
 def test_siem_webhook():
     """Simulate Splunk SIEM sending brute force alert"""
@@ -26,7 +49,7 @@ def test_siem_webhook():
         "severity": "high"
     }
 
-    response = requests.post(f"{API_BASE}/api/webhooks/siem", json=payload)
+    response = post_signed("/api/webhooks/siem", payload)
     print(f"SIEM Webhook: {response.status_code}")
     print(json.dumps(response.json(), indent=2))
     return response.json()
@@ -44,7 +67,7 @@ def test_edr_webhook():
         "process_id": 4521
     }
 
-    response = requests.post(f"{API_BASE}/api/webhooks/edr", json=payload)
+    response = post_signed("/api/webhooks/edr", payload)
     print(f"\nEDR Webhook: {response.status_code}")
     print(json.dumps(response.json(), indent=2))
     return response.json()
@@ -62,7 +85,7 @@ def test_email_webhook():
         "timestamp": "2026-04-17T14:30:00Z"
     }
 
-    response = requests.post(f"{API_BASE}/api/webhooks/email", json=payload)
+    response = post_signed("/api/webhooks/email", payload)
     print(f"\nEmail Webhook: {response.status_code}")
     print(json.dumps(response.json(), indent=2))
     return response.json()
@@ -82,13 +105,15 @@ def test_generic_webhook():
         }
     }
 
-    response = requests.post(f"{API_BASE}/api/webhooks/generic", json=payload)
+    response = post_signed("/api/webhooks/generic", payload)
     print(f"\nGeneric Webhook: {response.status_code}")
     print(json.dumps(response.json(), indent=2))
     return response.json()
 
 
 if __name__ == "__main__":
+    if not SECRET:
+        sys.exit("Set WEBHOOK_SECRET to the server's secret first.")
     print("🚀 Testing Webhook Endpoints\n")
     print("=" * 50)
 

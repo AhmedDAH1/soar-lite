@@ -1,6 +1,5 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
@@ -17,22 +16,47 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DEBUG else None
 )
 
-# CORS middleware (configure for your domain)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if settings.DEBUG else ["https://your-domain.com"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware: the dashboard is served from the same origin as the API,
+# so other websites have no reason to read it.
 
-# Security headers
+# Alert titles, descriptions and IOCs are written by whoever sends the alert,
+# so the dashboard treats them as hostile. The page escapes them; this policy
+# is the second layer, refusing inline scripts and event handlers even if
+# escaping were missed somewhere.
+CONTENT_SECURITY_POLICY = "; ".join([
+    "default-src 'self'",
+    "script-src 'self'",  # Chart.js and the stylesheet are bundled: no third-party code
+    "style-src 'self'",
+    "img-src 'self' data:",
+    "connect-src 'self'",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+])
+DOCS_PATHS = ("/docs", "/redoc", "/openapi.json")  # Swagger UI needs inline scripts
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+
 @app.middleware("http")
-async def add_security_headers(request, call_next):
+async def read_only_demo(request: Request, call_next):
+    """In the public demo, visitors can look at everything but change nothing."""
+    if get_settings().demo_mode and request.method in WRITE_METHODS:
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "This is a read-only demo. Run SOAR-Lite locally to try changes."},
+        )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
+    if not request.url.path.startswith(DOCS_PATHS):
+        response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "no-referrer"
     response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
 
@@ -57,8 +81,7 @@ async def startup_event():
     print(f"📊 Database: {settings.DATABASE_URL.split('@')[-1] if '@' in settings.DATABASE_URL else 'SQLite'}")
 
     # Seed demo data on the hosted demo (ephemeral DB starts empty each cold start).
-    import os
-    if os.environ.get("SEED_DEMO", "0") == "1":
+    if settings.demo_mode:
         from app.seed import seed_demo_data
         seed_demo_data()
 
@@ -75,5 +98,6 @@ async def health_check():
     return {
         "status": "healthy",
         "version": settings.APP_VERSION,
-        "database": "connected"
+        "database": "connected",
+        "demo_mode": get_settings().demo_mode,
     }

@@ -11,8 +11,7 @@ services:
       POSTGRES_PASSWORD: changeme_in_production
     volumes:
       - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
+    # No published port: only the web container needs the database.
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U soar_user -d soar_lite"]
       interval: 10s
@@ -34,8 +33,13 @@ services:
       # API Keys (set these for production)
       VIRUSTOTAL_API_KEY: ${VIRUSTOTAL_API_KEY:-}
       ABUSEIPDB_API_KEY: ${ABUSEIPDB_API_KEY:-}
+
+      # Shared secret for signed webhooks; webhooks are refused without it
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
     ports:
-      - "8000:8000"
+      # Loopback only: SOAR-Lite has no login, so it must not be reachable
+      # from the rest of the network.
+      - "127.0.0.1:8000:8000"
     depends_on:
       db:
         condition: service_healthy

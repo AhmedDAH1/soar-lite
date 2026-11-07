@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models import IOC, IOCType
+from app.services.ioc_extractor import IOCExtractor
 
 settings = get_settings()
 
@@ -277,6 +278,10 @@ class EnrichmentService:
             Updated IOC object
         """
         enrichment_data = {}
+
+        # Internal addresses never leave the network: no external lookups
+        if ioc.type == IOCType.IP and IOCExtractor.is_private_ip(ioc.value):
+            return ioc
 
         # Route to appropriate enrichment method
         if ioc.type == IOCType.IP:

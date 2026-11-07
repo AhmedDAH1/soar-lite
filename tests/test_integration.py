@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from tests.helpers import post_webhook
 
 client = TestClient(app)
 
@@ -101,7 +102,7 @@ def test_full_incident_lifecycle():
 def test_webhook_to_dashboard_flow():
     """Test webhook alert appears in dashboard"""
     # Send webhook
-    webhook_response = client.post("/api/webhooks/siem", json={
+    webhook_response = post_webhook(client, "/api/webhooks/siem", {
         "search_name": "Dashboard Test Alert",
         "result": {"test": "data"},
         "severity": "medium"

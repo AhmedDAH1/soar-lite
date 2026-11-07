@@ -15,7 +15,7 @@ cd soar-lite
 ### 2. Configure Environment
 ```bash
 cp .env.example .env
-# Edit .env and add your API keys
+# Edit .env: set WEBHOOK_SECRET (needed to receive alerts) and, optionally, API keys
 ```
 
 ### 3. Start Application
@@ -40,6 +40,10 @@ docker-compose down
 
 ## Production Deployment
 
+> **SOAR-Lite has no login.** Anyone who can reach a deployment can read and
+> change every incident. Deploy it publicly only as a read-only demo
+> (`DEMO_MODE=true`); otherwise keep it on a private network.
+
 ### Render.com (Recommended - Free Tier Available)
 
 1. **Create PostgreSQL Database**
@@ -58,6 +62,8 @@ docker-compose down
      - `VIRUSTOTAL_API_KEY`: (your key)
      - `ABUSEIPDB_API_KEY`: (your key)
      - `DEBUG`: `false`
+     - `DEMO_MODE`: `true` (public demo: sample data, read-only)
+     - `WEBHOOK_SECRET`: a long random value, if the instance should receive alerts
 
 3. **Deploy**
    - Click "Create Web Service"
@@ -238,8 +244,9 @@ docker-compose exec web env | grep API_KEY
 ## Security Checklist
 
 - [ ] Change default PostgreSQL password
-- [ ] Set DEBUG=false in production
-- [ ] Configure CORS for your domain only
+- [ ] Keep DEBUG=false (the default) in production
+- [ ] Set a long random WEBHOOK_SECRET and share it only with alert senders
+- [ ] Public instance? Set DEMO_MODE=true (there is no login)
 - [ ] Use HTTPS (Let's Encrypt + Nginx/Caddy)
 - [ ] Rotate API keys regularly
 - [ ] Enable firewall (UFW/Security Groups)

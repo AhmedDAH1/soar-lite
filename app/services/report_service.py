@@ -1,6 +1,7 @@
 import json
 from datetime import datetime
 from io import BytesIO
+from xml.sax.saxutils import escape  # ReportLab Paragraphs parse markup: alert text must be escaped
 
 from docx import Document
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -69,7 +70,7 @@ class ReportService:
         title = Paragraph(
             f"<b>INCIDENT REPORT</b><br/>"
             f"<font color='{severity_color.hexval()}'>[{incident.severity.value.upper()}]</font> "
-            f"{incident.title}",
+            f"{escape(incident.title)}",
             title_style
         )
         elements.append(title)
@@ -101,7 +102,7 @@ class ReportService:
         # Executive Summary
         elements.append(Paragraph("<b>EXECUTIVE SUMMARY</b>", heading_style))
         summary_text = incident.description or "No description available."
-        elements.append(Paragraph(summary_text, styles['BodyText']))
+        elements.append(Paragraph(escape(summary_text), styles['BodyText']))
         elements.append(Spacer(1, 0.2 * inch))
 
         # Alerts Section

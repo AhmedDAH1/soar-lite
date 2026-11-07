@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.services.ioc_extractor import IOCExtractor
 from app.services.playbook_engine import PlaybookEngine
+from tests.helpers import post_webhook
 
 client = TestClient(app)
 
@@ -176,7 +177,7 @@ def test_webhook_minimal_payload():
         "source": "minimal"
     }
 
-    response = client.post("/api/webhooks/generic", json=payload)
+    response = post_webhook(client, "/api/webhooks/generic", payload)
     assert response.status_code == 201
 
 
@@ -184,7 +185,7 @@ def test_webhook_empty_payload():
     """Test webhook with empty JSON"""
     payload = {}
 
-    response = client.post("/api/webhooks/generic", json=payload)
+    response = post_webhook(client, "/api/webhooks/generic", payload)
     # Should either create with defaults or reject
     assert response.status_code in [201, 422]
 
@@ -198,7 +199,7 @@ def test_webhook_unknown_fields():
         "another_unknown": 12345
     }
 
-    response = client.post("/api/webhooks/generic", json=payload)
+    response = post_webhook(client, "/api/webhooks/generic", payload)
     assert response.status_code == 201
 
 

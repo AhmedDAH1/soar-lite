@@ -1,30 +1,55 @@
+import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.database import get_db
 from app.schemas.alert import AlertResponse, WebhookAlert
 from app.services.alert_service import create_alert_with_incident
-from app.services.webhook_service import WebhookService
+from app.services.webhook_service import SIGNATURE_HEADER, TIMESTAMP_HEADER, WebhookService
+
+
+async def require_signature(request: Request):
+    """
+    Refuse any webhook request that isn't signed with WEBHOOK_SECRET.
+
+    Without this, anyone who can reach the server could create incidents,
+    or flood the queue with fake alerts to hide a real one.
+    """
+    settings = get_settings()
+    if not settings.WEBHOOK_SECRET:
+        raise HTTPException(status_code=503, detail="Webhooks are disabled: WEBHOOK_SECRET is not set")
+    problem = WebhookService.check_signature(
+        body=await request.body(),
+        secret=settings.WEBHOOK_SECRET,
+        timestamp=request.headers.get(TIMESTAMP_HEADER),
+        signature=request.headers.get(SIGNATURE_HEADER),
+        now=time.time(),
+        max_age=settings.WEBHOOK_MAX_AGE,
+    )
+    if problem:
+        raise HTTPException(status_code=401, detail=problem)
+
 
 router = APIRouter(
     prefix="/api/webhooks",
-    tags=["webhooks"]
+    tags=["webhooks"],
+    dependencies=[Depends(require_signature)],
 )
 
 
 @router.post("/generic", response_model=AlertResponse, status_code=201)
-async def receive_generic_webhook(
-    request: Request,
+def receive_generic_webhook(
     webhook_data: dict[str, Any],
-    x_webhook_signature: str | None = Header(None),
     db: Session = Depends(get_db)
 ):
     """
     Generic webhook endpoint for any alert source.
 
     Accepts flexible JSON format and auto-maps to internal alert schema.
+    Requests must be signed (see the README, "Sending alerts").
 
     **Example payloads:**
 
@@ -46,19 +71,7 @@ async def receive_generic_webhook(
       "raw_data": {"src_ip": "1.2.3.4", "attempts": 5}
     }
 ```
-
-    **Signature Validation (Optional):**
-    Include X-Webhook-Signature header for validation:
-    X-Webhook-Signature: <HMAC-SHA256 of request body>
     """
-    # Validate signature if provided (optional for development)
-    if x_webhook_signature:
-        body = await request.body()
-        secret = "your_webhook_secret"  # In production, load from settings
-
-        if not WebhookService.validate_signature(body.decode(), x_webhook_signature, secret):
-            raise HTTPException(status_code=401, detail="Invalid webhook signature")
-
     # Parse generic format
     parsed = WebhookService.parse_generic_alert(webhook_data)
 
