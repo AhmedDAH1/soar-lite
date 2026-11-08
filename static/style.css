@@ -31,3 +31,19 @@ canvas {
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+.spinner-sm {
+    width: 12px;
+    height: 12px;
+    border-width: 2px;
+    display: inline-block;
+}
+
+/* Drop zone on the Analyze page */
+.dropzone.dragging {
+    border-color: #3b82f6;
+    background-color: rgba(59, 130, 246, 0.08);
+}
+
+details > summary {
+    cursor: pointer;
+}

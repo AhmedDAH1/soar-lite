@@ -1,0 +1,14 @@
+Return-Path: <noreply@github.com>
+Received: from out-21.smtp.github.com (out-21.smtp.github.com [192.30.252.204]) by mx.example.org
+Authentication-Results: mx.example.org; spf=pass smtp.mailfrom=github.com; dkim=pass header.d=github.com; dmarc=pass
+From: GitHub <noreply@github.com>
+To: dev-team@example.org
+Subject: [example/web] Pull request #212 merged
+Date: Sun, 8 Nov 2026 11:20:05 +0000
+Message-ID: <example/web/pull/212/merged@github.com>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+
+Pull request #212 "Update dependencies" was merged into main by m.okafor.
+
+View it on GitHub: https://github.com/example/web/pull/212

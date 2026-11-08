@@ -13,17 +13,22 @@ async function loadStatistics() {
     try {
         const response = await fetch(`${API_BASE}/api/incidents/statistics`);
         const stats = await response.json();
-        
+
         // Update metric cards
         document.getElementById('total-incidents').textContent = stats.total_incidents;
         document.getElementById('unresolved').textContent = stats.unresolved;
         document.getElementById('critical-unresolved').textContent = stats.critical_unresolved;
         document.getElementById('recent-7days').textContent = stats.recent_7_days;
-        
+        const ai = stats.ai_triage || {};
+        document.getElementById('ai-false-alarms').textContent = ai.false_alarm ?? 0;
+        document.getElementById('ai-summary').textContent =
+            `${plural(ai.real_attack ?? 0, 'real attack')} · ${ai.needs_analyst ?? 0} for an analyst · ${plural(ai.injection ?? 0, 'injection attempt')}` +
+            (ai.pending ? ` · ${ai.pending} analysing` : '');
+
         // Update charts
         updateSeverityChart(stats.by_severity);
         updateStatusChart(stats.by_status);
-        
+
     } catch (error) {
         console.error('Error loading statistics:', error);
     }
@@ -33,11 +38,11 @@ async function loadStatistics() {
 let severityChart = null;
 function updateSeverityChart(data) {
     const ctx = document.getElementById('severityChart');
-    
+
     if (severityChart) {
         severityChart.destroy();
     }
-    
+
     severityChart = new Chart(ctx, {
         type: 'pie',
         data: {
@@ -77,11 +82,11 @@ function updateSeverityChart(data) {
 let statusChart = null;
 function updateStatusChart(data) {
     const ctx = document.getElementById('statusChart');
-    
+
     if (statusChart) {
         statusChart.destroy();
     }
-    
+
     statusChart = new Chart(ctx, {
         type: 'bar',
         data: {
@@ -141,31 +146,31 @@ async function loadIncidents() {
     const severity = document.getElementById('filter-severity').value;
     const status = document.getElementById('filter-status').value;
     const search = document.getElementById('filter-search').value;
-    
+
     // Build query params
     const params = new URLSearchParams();
     if (severity) params.append('severity', severity);
     if (status) params.append('status', status);
     if (search) params.append('search', search);
     params.append('limit', '50');
-    
+
     try {
         const response = await fetch(`${API_BASE}/api/incidents?${params}`);
         const incidents = await response.json();
-        
+
         const tbody = document.getElementById('incidents-table');
-        
+
         if (incidents.length === 0) {
             tbody.innerHTML = `
                 <tr>
-                    <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                    <td colspan="6" class="px-6 py-8 text-center text-gray-500">
                         No incidents found
                     </td>
                 </tr>
             `;
             return;
         }
-        
+
         tbody.innerHTML = incidents.map(incident => `
             <tr class="hover:bg-gray-750 cursor-pointer" data-id="${esc(incident.id)}">
                 <td class="px-6 py-4 text-sm">#${esc(incident.id)}</td>
@@ -175,15 +180,16 @@ async function loadIncidents() {
                 </td>
                 <td class="px-6 py-4">${getSeverityBadge(incident.severity)}</td>
                 <td class="px-6 py-4">${getStatusBadge(incident.status)}</td>
+                <td class="px-6 py-4 whitespace-nowrap">${getVerdictBadge(incident.triage)}</td>
                 <td class="px-6 py-4 text-sm text-gray-400">${esc(formatDate(incident.created_at))}</td>
             </tr>
         `).join('');
-        
+
     } catch (error) {
         console.error('Error loading incidents:', error);
         document.getElementById('incidents-table').innerHTML = `
             <tr>
-                <td colspan="5" class="px-6 py-8 text-center text-red-400">
+                <td colspan="6" class="px-6 py-8 text-center text-red-400">
                     Error loading incidents
                 </td>
             </tr>
@@ -205,10 +211,15 @@ document.addEventListener('DOMContentLoaded', () => {
             window.location.href = `/static/incident.html?id=${encodeURIComponent(row.dataset.id)}`;
         }
     });
-    
-    // Refresh every 30 seconds
+
+    // Refresh every 30 seconds, or every 3 while AI triage is still running
+    let last = 0;
     setInterval(() => {
-        loadStatistics();
-        loadIncidents();
-    }, 30000);
+        const analysing = document.querySelector('#incidents-table .spinner');
+        if (analysing || Date.now() - last > 30000) {
+            last = Date.now();
+            loadStatistics();
+            loadIncidents();
+        }
+    }, 3000);
 });

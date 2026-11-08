@@ -4,7 +4,17 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.database import Base, engine
-from app.routers import alerts, enrichment, incidents, iocs, playbooks, reports, webhooks
+from app.routers import (
+    alerts,
+    analyze,
+    enrichment,
+    incidents,
+    iocs,
+    playbooks,
+    reports,
+    triage,
+    webhooks,
+)
 
 settings = get_settings()
 
@@ -71,6 +81,8 @@ app.include_router(playbooks.router)
 app.include_router(incidents.router)
 app.include_router(reports.router)
 app.include_router(webhooks.router)
+app.include_router(analyze.router)
+app.include_router(triage.router)
 
 
 @app.on_event("startup")
@@ -90,6 +102,12 @@ async def startup_event():
 async def root():
     """Serve the dashboard homepage"""
     return FileResponse('static/index.html')
+
+
+@app.get("/analyze")
+async def analyze_page():
+    """The Analyze logs page"""
+    return FileResponse('static/analyze.html')
 
 
 @app.get("/health")

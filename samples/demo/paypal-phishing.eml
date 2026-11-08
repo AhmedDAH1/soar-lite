@@ -1,0 +1,18 @@
+Return-Path: <security@paypa1-secure.com>
+Received: from mail.paypa1-secure.com (unknown [185.220.101.47]) by mx.example.org
+Authentication-Results: mx.example.org; spf=fail smtp.mailfrom=paypa1-secure.com; dkim=none; dmarc=fail
+From: "PayPal Security" <security@paypa1-secure.com>
+Reply-To: account-team@paypa1-help.ru
+To: j.chen@example.org
+Subject: Urgent: Your account has been suspended
+Date: Sun, 8 Nov 2026 07:41:12 +0000
+Message-ID: <a81f2c@paypa1-secure.com>
+MIME-Version: 1.0
+Content-Type: text/html; charset="utf-8"
+
+<html><body>
+<p>Dear Customer,</p>
+<p>We detected unusual activity and your account has been <b>suspended</b>. You must verify your identity within 24 hours or your account will be permanently closed.</p>
+<p><a href="http://paypa1-secure.com/verify-account?id=88213">Verify your account now</a></p>
+<p>PayPal Security Team</p>
+</body></html>

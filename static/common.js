@@ -69,3 +69,37 @@ async function applyDemoMode() {
         return false;
     }
 }
+
+// ── AI triage ──────────────────────────────────────────────────────
+// The model only suggests. Its reasoning was influenced by alert text an
+// attacker may have written, so it is escaped like everything else.
+
+const VERDICTS = {
+    true_positive: { label: 'Real attack', color: 'bg-red-700', text: 'text-red-300' },
+    false_positive: { label: 'False alarm', color: 'bg-green-700', text: 'text-green-300' },
+    needs_investigation: { label: 'Needs analyst', color: 'bg-yellow-700', text: 'text-yellow-300' }
+};
+
+// A small chip for the AI's suggestion; `triage` may be null (not triaged).
+function getVerdictBadge(triage, size = 'text-xs px-2') {
+    if (!triage) return `<span class="${size} py-1 rounded text-gray-500">—</span>`;
+    if (triage.status === 'pending') {
+        return `<span class="${size} py-1 rounded bg-gray-700 text-gray-300 inline-flex items-center gap-2"><span class="spinner spinner-sm"></span>Analysing</span>`;
+    }
+    if (triage.status === 'failed') {
+        return `<span class="${size} py-1 rounded bg-gray-700 text-gray-300" title="The model gave no usable answer, so the incident goes to an analyst">AI failed: analyst</span>`;
+    }
+    if (triage.status !== 'done') return `<span class="${size} py-1 rounded text-gray-500">—</span>`;
+    const v = VERDICTS[triage.verdict] || { label: triage.verdict, color: 'bg-gray-600' };
+    const flag = triage.injection_suspected ? ' <span title="Possible prompt injection in the alert">⚠</span>' : '';
+    const decided = triage.decision ? ` <span class="text-xs text-gray-300">· ${esc(triage.decision)}</span>` : '';
+    return `<span class="${size} py-1 rounded font-semibold ${v.color}">${esc(v.label)}${flag}</span>${decided}`;
+}
+
+function percent(value) {
+    return value == null ? '' : `${Math.round(value * 100)}%`;
+}
+
+function plural(count, word) {
+    return `${count} ${word}${count === 1 ? '' : 's'}`;
+}

@@ -14,6 +14,33 @@ from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, 
 
 from app.models import Incident
 
+VERDICT_LABELS = {"true_positive": "Real attack", "false_positive": "False alarm",
+                  "needs_investigation": "Needs an analyst"}
+
+
+def ai_triage_lines(incident: Incident) -> list[tuple[str, str]] | None:
+    """The AI suggestion as (label, text) rows for the report, or None if there is none."""
+    t = incident.triage
+    if not t or t.status != "done":
+        return None
+    decision = f"{t.decision} by {t.decided_by}" if t.decision else "not yet decided by an analyst"
+    rows = [
+        ("Suggestion", f"{VERDICT_LABELS.get(t.verdict, t.verdict)}, {t.severity} severity"
+                       + (f", {round(t.confidence * 100)}% confident" if t.confidence is not None else "")),
+        ("Model", f"{t.model} ({t.mode} mode)"),
+        ("Analyst decision", decision),
+        ("Reasoning", t.reasoning or ""),
+    ]
+    if t.next_steps:
+        rows.append(("Next steps", "; ".join(t.next_steps)))
+    if t.evidence:
+        rows.append(("Records cited", ", ".join(t.evidence)))
+    if t.injection_suspected:
+        rows.append(("Warning", "Possible prompt injection: the alert contains text addressed to the AI"))
+    for override in t.overrides or []:
+        rows.append(("Guard", override))
+    return rows
+
 
 class ReportService:
     """
@@ -104,6 +131,14 @@ class ReportService:
         summary_text = incident.description or "No description available."
         elements.append(Paragraph(escape(summary_text), styles['BodyText']))
         elements.append(Spacer(1, 0.2 * inch))
+
+        # AI triage (a suggestion; the analyst decision is recorded with it)
+        ai_rows = ai_triage_lines(incident)
+        if ai_rows:
+            elements.append(Paragraph("<b>AI TRIAGE</b>", heading_style))
+            for label, text in ai_rows:
+                elements.append(Paragraph(f"<b>{escape(label)}:</b> {escape(text)}", styles['BodyText']))
+            elements.append(Spacer(1, 0.2 * inch))
 
         # Alerts Section
         if incident.alerts:
@@ -267,6 +302,15 @@ class ReportService:
         # Executive Summary
         doc.add_heading('Executive Summary', level=1)
         doc.add_paragraph(incident.description or "No description available.")
+
+        # AI triage
+        ai_rows = ai_triage_lines(incident)
+        if ai_rows:
+            doc.add_heading('AI Triage', level=1)
+            for label, text in ai_rows:
+                paragraph = doc.add_paragraph()
+                paragraph.add_run(f"{label}: ").bold = True
+                paragraph.add_run(text)
 
         # Alerts
         if incident.alerts:

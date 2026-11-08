@@ -4,6 +4,34 @@ All notable changes to SOAR-Lite. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [3.0.0] - 2026-11-08
+
+Logs in, triaged incidents out: SOAR-Lite now analyses uploaded logs and
+emails with my detection tools and gets an AI suggestion for every incident.
+
+### Added
+- **Analyze page** (`/analyze`, `POST /api/analyze/`): upload SSH, web
+  server and firewall logs and `.eml` emails, or load the bundled demo files.
+  Logs go to Log Threat Detector's analysis API, emails to Email Threat
+  Analyzer's (`LOG_ANALYZER_URL`, `EMAIL_ANALYZER_URL`); every detection
+  becomes an incident through the same path as a webhook.
+- **AI triage** with [ai-alert-triage](https://github.com/AhmedDAH1/ai-alert-triage):
+  a suggested verdict, severity, reasoning, next steps and cited records for
+  each new incident, in strict mode by default. Runs in the background; off
+  until `TRIAGE_PROVIDER` or `TRIAGE_BASE_URL`/`TRIAGE_MODEL` is set.
+- **Trusted SOC context** (`soc_context.yml`): records by IP address and
+  sender domain that the AI may cite to dismiss an alert.
+- **Analyst decisions**: accept or reject the suggestion. Accepting a false
+  alarm closes the incident; accepting an attack applies the suggested
+  severity and starts the investigation. Both go on the timeline.
+- AI triage on the incident page, an AI column and metric on the dashboard,
+  and an AI section in PDF and DOCX reports.
+- `triage_results` table (Alembic migration `a3f1c9e2b7d4`).
+
+### Breaking changes
+- Requires Python packages from the new `requirements.txt` (ai-alert-triage).
+  Run `alembic upgrade head` on existing databases.
+
 ## [2.0.0] - 2026-11-08
 
 A security release. Alerts are written by whoever sends them, often an

@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 from app.schemas.action import ActionResponse
 from app.schemas.alert import AlertResponse
 from app.schemas.ioc import IOCResponse
+from app.schemas.triage import TriageResponse, TriageSummary
 
 
 class IncidentBase(BaseModel):
@@ -37,6 +38,7 @@ class IncidentResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime | None
+    triage: TriageSummary | None = None
 
     class Config:
         from_attributes = True
@@ -47,6 +49,7 @@ class IncidentDetailResponse(IncidentResponse):
     alerts: list[AlertResponse] = []
     iocs: list[IOCResponse] = []
     actions: list[ActionResponse] = []
+    triage: TriageResponse | None = None
 
     class Config:
         from_attributes = True

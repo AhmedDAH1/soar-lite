@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.database import get_db
 from app.schemas.alert import AlertResponse, WebhookAlert
+from app.services import triage_service
 from app.services.alert_service import create_alert_with_incident
 from app.services.webhook_service import SIGNATURE_HEADER, TIMESTAMP_HEADER, WebhookService
 
@@ -31,6 +32,12 @@ async def require_signature(request: Request):
     )
     if problem:
         raise HTTPException(status_code=401, detail=problem)
+
+
+def triage_new_incident(incident_id: int):
+    """Queue AI triage for an incident a webhook just opened (when AUTO_TRIAGE is on)."""
+    if get_settings().AUTO_TRIAGE:
+        triage_service.queue(incident_id)
 
 
 router = APIRouter(
@@ -83,6 +90,7 @@ def receive_generic_webhook(
 
     # Create incident
     db_alert = create_alert_with_incident(db, alert_create)
+    triage_new_incident(db_alert.incident_id)
 
     return db_alert
 
@@ -112,6 +120,7 @@ def receive_siem_webhook(
     webhook_alert = WebhookAlert(**parsed)
     alert_create = webhook_alert.to_alert_create()
     db_alert = create_alert_with_incident(db, alert_create)
+    triage_new_incident(db_alert.incident_id)
 
     return db_alert
 
@@ -139,6 +148,7 @@ def receive_edr_webhook(
     webhook_alert = WebhookAlert(**parsed)
     alert_create = webhook_alert.to_alert_create()
     db_alert = create_alert_with_incident(db, alert_create)
+    triage_new_incident(db_alert.incident_id)
 
     return db_alert
 
@@ -167,5 +177,6 @@ def receive_email_webhook(
     webhook_alert = WebhookAlert(**parsed)
     alert_create = webhook_alert.to_alert_create()
     db_alert = create_alert_with_incident(db, alert_create)
+    triage_new_incident(db_alert.incident_id)
 
     return db_alert

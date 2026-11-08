@@ -251,7 +251,24 @@ class IncidentService:
             )
         ).count()
 
+        # AI triage: the latest suggestion per incident
+        ai = {"false_alarm": 0, "real_attack": 0, "needs_analyst": 0, "pending": 0,
+              "injection": 0, "accepted": 0, "rejected": 0}
+        labels = {"false_positive": "false_alarm", "true_positive": "real_attack", "needs_investigation": "needs_analyst"}
+        for incident in db.query(Incident).all():
+            t = incident.triage
+            if not t:
+                continue
+            if t.status == "pending":
+                ai["pending"] += 1
+            elif t.status == "done" and t.verdict in labels:
+                ai[labels[t.verdict]] += 1
+            ai["injection"] += bool(t.injection_suspected)
+            if t.decision:
+                ai[t.decision] += 1
+
         return {
+            "ai_triage": ai,
             "total_incidents": total_incidents,
             "by_status": status_counts,
             "by_severity": severity_counts,

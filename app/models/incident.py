@@ -50,7 +50,13 @@ class Incident(Base):
     alerts = relationship("Alert", back_populates="incident")
     iocs = relationship("IOC", back_populates="incident")
     actions = relationship("Action", back_populates="incident")
+    triage_results = relationship("TriageResult", back_populates="incident", order_by="TriageResult.id")
 
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    @property
+    def triage(self):
+        """The latest AI triage of this incident, if any."""
+        return self.triage_results[-1] if self.triage_results else None
