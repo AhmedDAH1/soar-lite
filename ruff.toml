@@ -1,6 +1,8 @@
 # Ruff configuration for Python linting
 
 line-length = 100
+# triage/ is ai-alert-triage, bundled unchanged (triage/VENDORED.md)
+extend-exclude = ["triage"]
 
 [lint]
 select = [

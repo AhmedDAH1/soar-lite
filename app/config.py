@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     # Application
     APP_NAME: str = "SOAR-Lite"
-    APP_VERSION: str = "3.0.0"
+    APP_VERSION: str = "3.0.1"
     # Enables /docs and /redoc. Off unless set, so a deployment never exposes them by accident.
     DEBUG: bool = False
 

@@ -4,6 +4,14 @@ All notable changes to SOAR-Lite. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [3.0.1] - 2026-11-08
+
+### Fixed
+- The build downloaded the AI triage engine from GitHub, which timed out on
+  Render and can fail on networks where GitHub is slow. The engine
+  (ai-alert-triage v0.2.3) is now bundled in `triage/`, unchanged, so the
+  build needs nothing beyond PyPI.
+
 ## [3.0.0] - 2026-11-08
 
 Logs in, triaged incidents out: SOAR-Lite now analyses uploaded logs and
