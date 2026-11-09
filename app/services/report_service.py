@@ -1,25 +1,65 @@
+"""
+Incident reports in PDF and DOCX.
+
+Both formats are built from the same content (ReportContent), so they always
+say the same thing: a cover block with the key facts, the summary, the AI
+triage and the analyst's decision, alerts, indicators of compromise, next
+steps and the timeline.
+
+Everything that came from an alert (titles, descriptions, IOC values, the
+AI's reasoning) may have been written by an attacker. ReportLab Paragraphs
+parse markup, so all of it is escaped before it reaches a Paragraph.
+"""
+
 import json
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from io import BytesIO
 from xml.sax.saxutils import escape  # ReportLab Paragraphs parse markup: alert text must be escaped
 
 from docx import Document
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.shared import RGBColor
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
+from docx.shared import Cm, Pt, RGBColor
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
-from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-from reportlab.lib.units import inch
-from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfgen import canvas as pdf_canvas
+from reportlab.platypus import (
+    CondPageBreak,
+    KeepTogether,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
 
+from app.config import get_settings
 from app.models import Incident
 
 VERDICT_LABELS = {"true_positive": "Real attack", "false_positive": "False alarm",
                   "needs_investigation": "Needs an analyst"}
 
+# One palette for both formats
+INK = "#0f172a"          # headings, header bar
+TEXT = "#1e293b"
+MUTED = "#64748b"
+RULE = "#e2e8f0"
+SHADE = "#f1f5f9"
+ACCENT = "#1d4ed8"
+WARNING = "#a16207"
+SEVERITY_COLORS = {"critical": "#b91c1c", "high": "#c2410c", "medium": "#a16207", "low": "#1d4ed8"}
+STATUS_COLORS = {"new": "#475569", "investigating": "#7c3aed", "contained": "#c2410c",
+                 "resolved": "#15803d", "closed": "#334155"}
+VERDICT_COLORS = {"true_positive": "#b91c1c", "false_positive": "#15803d", "needs_investigation": "#a16207"}
+
 
 def ai_triage_lines(incident: Incident) -> list[tuple[str, str]] | None:
-    """The AI suggestion as (label, text) rows for the report, or None if there is none."""
+    """The AI suggestion as (label, text) rows, or None if there is none."""
     t = incident.triage
     if not t or t.status != "done":
         return None
@@ -42,371 +82,516 @@ def ai_triage_lines(incident: Incident) -> list[tuple[str, str]] | None:
     return rows
 
 
+# ── Content shared by both formats ──────────────────────────────────
+
+def _when(value) -> str:
+    return value.strftime("%d %b %Y, %H:%M UTC") if value else "—"
+
+
+def _enrichment_summary(ioc) -> str:
+    if not ioc.enrichment_data:
+        return "Not enriched"
+    try:
+        data = json.loads(ioc.enrichment_data)
+    except (ValueError, TypeError):
+        return "Unreadable enrichment data"
+    parts = []
+    if isinstance(data.get("virustotal"), dict):
+        parts.append(f"VirusTotal: {data['virustotal'].get('malicious', 0)} engines flag it")
+    if isinstance(data.get("abuseipdb"), dict):
+        parts.append(f"AbuseIPDB: {data['abuseipdb'].get('abuse_confidence_score', 0)}% abuse confidence")
+    if isinstance(data.get("geolocation"), dict) and data["geolocation"].get("country"):
+        parts.append(str(data["geolocation"]["country"]))
+    return " · ".join(parts) if parts else "Enriched, no findings"
+
+
+@dataclass
+class ReportContent:
+    incident_id: int
+    title: str
+    severity: str
+    status: str
+    summary: str
+    facts: list[tuple[str, str]]
+    generated: str
+    version: str
+    triage: dict | None = None
+    alerts: list[tuple[str, str, str]] = field(default_factory=list)        # source, title, received
+    iocs: list[tuple[str, str, str, str]] = field(default_factory=list)     # type, value, verdict, enrichment
+    next_steps: list[str] = field(default_factory=list)
+    timeline: list[tuple[str, str, str]] = field(default_factory=list)      # time, actor, event
+
+
+def build_content(incident: Incident) -> ReportContent:
+    t = incident.triage
+    triage = None
+    if t and t.status == "done":
+        triage = {
+            "verdict": t.verdict,
+            "label": VERDICT_LABELS.get(t.verdict, t.verdict or ""),
+            "severity": t.severity or "",
+            "confidence": f"{round(t.confidence * 100)}%" if t.confidence is not None else "—",
+            "model": f"{t.model} · {t.mode} mode",
+            "decision": f"{t.decision.capitalize()} by {t.decided_by}" if t.decision else "Awaiting an analyst's decision",
+            "reasoning": t.reasoning or "",
+            "evidence": ", ".join(t.evidence or []) or "None",
+            "injection": bool(t.injection_suspected),
+            "guards": list(t.overrides or []),
+        }
+    malicious = sum(1 for ioc in incident.iocs if ioc.is_malicious)
+    facts = [
+        ("Severity", incident.severity.value.capitalize()),
+        ("Status", incident.status.value.capitalize()),
+        ("Opened", _when(incident.created_at)),
+        ("Last updated", _when(incident.updated_at or incident.created_at)),
+        ("Alerts", str(len(incident.alerts))),
+        ("Indicators", f"{len(incident.iocs)} ({malicious} malicious)"),
+        ("AI suggestion", f"{triage['label']} ({triage['confidence']})" if triage else "Not triaged"),
+        ("Analyst decision", (t.decision.capitalize() if t.decision else "Pending") if triage else "—"),
+    ]
+    return ReportContent(
+        incident_id=incident.id,
+        title=incident.title,
+        severity=incident.severity.value,
+        status=incident.status.value,
+        summary=incident.description or "No description was recorded for this incident.",
+        facts=facts,
+        generated=datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC"),
+        version=get_settings().APP_VERSION,
+        triage=triage,
+        alerts=[(a.source.upper(), a.title, _when(a.created_at)) for a in incident.alerts],
+        iocs=[(ioc.type.value.upper(), ioc.value, "Malicious" if ioc.is_malicious else "Not flagged",
+               _enrichment_summary(ioc)) for ioc in incident.iocs],
+        next_steps=list(t.next_steps or []) if triage else [],
+        timeline=[(a.created_at.strftime("%d %b %H:%M"), a.performed_by or "system", a.description)
+                  for a in incident.actions],
+    )
+
+
+# ── PDF ─────────────────────────────────────────────────────────────
+
+def _styles() -> dict:
+    def style(name, **kw):
+        base = {"fontName": "Helvetica", "fontSize": 9.5, "leading": 13.5, "textColor": colors.HexColor(TEXT)}
+        return ParagraphStyle(name, **{**base, **kw})
+    bold = "Helvetica-Bold"
+    return {
+        "body": style("body"),
+        "small": style("small", fontSize=8.5, leading=11.5),
+        "muted": style("muted", fontSize=8, leading=10.5, textColor=colors.HexColor(MUTED)),
+        "label": style("label", fontName=bold, fontSize=7, leading=9, textColor=colors.HexColor(MUTED)),
+        "value": style("value", fontName=bold, fontSize=10, leading=13),
+        "kicker": style("kicker", fontName=bold, fontSize=8, leading=10, textColor=colors.HexColor(ACCENT)),
+        "title": style("title", fontName=bold, fontSize=19, leading=24, textColor=colors.HexColor(INK)),
+        "h2": style("h2", fontName=bold, fontSize=12, leading=16, textColor=colors.HexColor(INK)),
+        "cell": style("cell", fontSize=8.5, leading=11),
+        "mono": style("mono", fontName="Courier", fontSize=8, leading=10.5),
+        "head": style("head", fontName=bold, fontSize=7.5, leading=10, textColor=colors.HexColor(MUTED)),
+    }
+
+
+def _pill(text: str, color: str, s) -> Table:
+    label = text.upper()
+    pill = Table([[Paragraph(f'<font color="white"><b>{escape(label)}</b></font>', s["small"])]],
+                 colWidths=[stringWidth(label, "Helvetica-Bold", 8.5) + 15])
+    pill.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(color)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 7), ("RIGHTPADDING", (0, 0), (-1, -1), 7),
+        ("TOPPADDING", (0, 0), (-1, -1), 2.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 3.5),
+        ("ROUNDEDCORNERS", [3, 3, 3, 3]),
+    ]))
+    return pill
+
+
+def _section(number: int, title: str, s) -> Table:
+    """A numbered section heading with a rule under it."""
+    heading = Table([[Paragraph(f'<font color="{ACCENT}">{number:02d}</font>&nbsp;&nbsp;{escape(title)}', s["h2"])]],
+                    colWidths=["100%"])
+    heading.setStyle(TableStyle([
+        ("LINEBELOW", (0, 0), (-1, -1), 0.8, colors.HexColor(INK)),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+        ("TOPPADDING", (0, 0), (-1, -1), 14), ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+    ]))
+    return heading
+
+
+def _data_table(header: list[str], rows: list[list], widths: list[float], s) -> Table:
+    data = [[Paragraph(escape(h.upper()), s["head"]) for h in header]] + rows
+    table = Table(data, colWidths=widths, repeatRows=1)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(SHADE)),
+        ("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.HexColor(MUTED)),
+        ("LINEBELOW", (0, 1), (-1, -1), 0.4, colors.HexColor(RULE)),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 6), ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING", (0, 0), (-1, -1), 5), ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return table
+
+
+class _ReportCanvas(pdf_canvas.Canvas):
+    """Draws the header bar and a 'page X of Y' footer once the page count is known."""
+
+    def __init__(self, *args, content: ReportContent, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved, self._content = [], content
+
+    def showPage(self):  # noqa: N802 - ReportLab API
+        self._saved.append(dict(self.__dict__))
+        self._startPage()
+
+    def save(self):
+        total = len(self._saved)
+        for state in self._saved:
+            self.__dict__.update(state)
+            self._decorate(total)
+            super().showPage()
+        super().save()
+
+    def _decorate(self, total: int):
+        width, height = A4
+        c = self._content
+        self.setFillColor(colors.HexColor(INK))
+        self.rect(0, height - 16 * mm, width, 16 * mm, stroke=0, fill=1)
+        self.setFillColor(colors.HexColor(SEVERITY_COLORS.get(c.severity, ACCENT)))
+        self.rect(0, height - 17.2 * mm, width, 1.2 * mm, stroke=0, fill=1)
+        self.setFillColor(colors.white)
+        self.setFont("Helvetica-Bold", 11)
+        self.drawString(18 * mm, height - 10 * mm, "SOAR-Lite")
+        self.setFont("Helvetica", 8.5)
+        self.drawString(41 * mm, height - 10 * mm, "Security Incident Report")
+        self.drawRightString(width - 18 * mm, height - 10 * mm, f"INC-{c.incident_id:05d}  ·  CONFIDENTIAL")
+        self.setStrokeColor(colors.HexColor(RULE))
+        self.setLineWidth(0.5)
+        self.line(18 * mm, 14 * mm, width - 18 * mm, 14 * mm)
+        self.setFillColor(colors.HexColor(MUTED))
+        self.setFont("Helvetica", 7.5)
+        self.drawString(18 * mm, 9.5 * mm, f"Generated {c.generated} by SOAR-Lite v{c.version}. Internal use only.")
+        self.drawRightString(width - 18 * mm, 9.5 * mm, f"Page {self._pageNumber} of {total}")
+
+
+def _pdf_elements(c: ReportContent, s) -> list:
+    width = A4[0] - 36 * mm
+    out = [Spacer(1, 4 * mm), Paragraph(f"INCIDENT INC-{c.incident_id:05d}", s["kicker"]), Spacer(1, 2 * mm),
+           Paragraph(escape(c.title), s["title"]), Spacer(1, 3 * mm)]
+
+    pills = [_pill(f"{c.severity} severity", SEVERITY_COLORS.get(c.severity, ACCENT), s),
+             _pill(c.status, STATUS_COLORS.get(c.status, MUTED), s)]
+    if c.triage:
+        pills.append(_pill(f"AI: {c.triage['label']}", VERDICT_COLORS.get(c.triage["verdict"], MUTED), s))
+    row = Table([pills], colWidths=[p._colWidths[0] + 6 for p in pills], hAlign="LEFT")
+    row.setStyle(TableStyle([("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 6)]))
+    out += [row, Spacer(1, 5 * mm)]
+
+    # Key facts: 4 columns × 2 rows, label above value
+    cells = [[Paragraph(escape(label.upper()), s["label"]), Paragraph(escape(value), s["value"])] for label, value in c.facts]
+    facts = Table([cells[:4], cells[4:8]], colWidths=[width / 4] * 4)
+    facts.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor(SHADE)),
+        ("LINEBELOW", (0, 0), (-1, 0), 1, colors.white),
+        ("LINEAFTER", (0, 0), (-2, -1), 1, colors.white),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING", (0, 0), (-1, -1), 9), ("TOPPADDING", (0, 0), (-1, -1), 7),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+    ]))
+    out.append(facts)
+
+    n = 1
+    out += [_section(n, "Summary", s), Spacer(1, 2 * mm), Paragraph(escape(c.summary), s["body"])]
+
+    if c.triage:
+        n += 1
+        t = c.triage
+        color = VERDICT_COLORS.get(t["verdict"], MUTED)
+        lines = [
+            Paragraph(f'<font color="{color}"><b>{escape(t["label"])}</b></font>'
+                      f' · {escape(t["severity"])} severity · {escape(t["confidence"])} confidence', s["value"]),
+            Spacer(1, 2 * mm), Paragraph(escape(t["reasoning"]), s["body"]), Spacer(1, 2 * mm),
+            Paragraph(f"<b>Records cited:</b> {escape(t['evidence'])}", s["small"]),
+            Paragraph(f"<b>Model:</b> {escape(t['model'])}", s["small"]),
+            Paragraph(f"<b>Analyst decision:</b> {escape(t['decision'])}", s["small"]),
+        ]
+        for guard in t["guards"]:
+            lines.append(Paragraph(f'<font color="{ACCENT}"><b>Guard:</b></font> {escape(guard)}', s["small"]))
+        if t["injection"]:
+            lines.append(Paragraph(f'<font color="{WARNING}"><b>Warning:</b> text in this alert tries to instruct the AI '
+                                   "(possible prompt injection). Treat it as a sign the sender is malicious.</font>",
+                                   s["small"]))
+        box = Table([[lines]], colWidths=[width])
+        box.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#fafafa")),
+            ("BOX", (0, 0), (-1, -1), 0.4, colors.HexColor(RULE)),
+            ("LINEBEFORE", (0, 0), (0, -1), 3, colors.HexColor(color)),
+            ("LEFTPADDING", (0, 0), (-1, -1), 11), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+            ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 9),
+        ]))
+        out.append(KeepTogether([
+            _section(n, "AI triage", s), Spacer(1, 2 * mm),
+            Paragraph("A suggestion from a language model. It changes nothing on its own; "
+                      "the analyst's decision is recorded with it.", s["muted"]),
+            Spacer(1, 2 * mm), box]))
+
+    if c.alerts:
+        n += 1
+        rows = [[Paragraph(escape(v), s["cell"]) for v in alert] for alert in c.alerts]
+        out += [CondPageBreak(40 * mm), _section(n, "Alerts", s), Spacer(1, 2 * mm),
+                _data_table(["Source", "Alert", "Received"], rows, [0.21 * width, 0.55 * width, 0.24 * width], s)]
+
+    if c.iocs:
+        n += 1
+        rows = []
+        for kind, value, verdict, enrichment in c.iocs:
+            color = SEVERITY_COLORS["critical"] if verdict == "Malicious" else MUTED
+            rows.append([Paragraph(escape(kind), s["cell"]), Paragraph(escape(value), s["mono"]),
+                         Paragraph(f'<font color="{color}"><b>{escape(verdict)}</b></font>', s["cell"]),
+                         Paragraph(escape(enrichment), s["cell"])])
+        out += [CondPageBreak(40 * mm), _section(n, "Indicators of compromise", s), Spacer(1, 2 * mm),
+                _data_table(["Type", "Value", "Verdict", "Enrichment"], rows,
+                            [0.11 * width, 0.4 * width, 0.14 * width, 0.35 * width], s)]
+
+    if c.next_steps:
+        n += 1
+        steps = [[Paragraph(f'<font color="{ACCENT}"><b>{i}</b></font>', s["body"]), Paragraph(escape(step), s["body"])]
+                 for i, step in enumerate(c.next_steps, 1)]
+        table = Table(steps, colWidths=[8 * mm, width - 8 * mm])
+        table.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                   ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
+        out += [CondPageBreak(35 * mm), _section(n, "Recommended next steps", s), Spacer(1, 2 * mm),
+                Paragraph("Suggested by the AI triage; check each one before acting.", s["muted"]), Spacer(1, 2 * mm), table]
+
+    if c.timeline:
+        n += 1
+        rows = [[Paragraph(escape(v), s["cell"]) for v in entry] for entry in c.timeline]
+        out += [CondPageBreak(40 * mm), _section(n, "Timeline", s), Spacer(1, 2 * mm),
+                _data_table(["Time (UTC)", "By", "Event"], rows, [0.17 * width, 0.17 * width, 0.66 * width], s)]
+    return out
+
+
+# ── DOCX ────────────────────────────────────────────────────────────
+
+def _rgb(hex_color: str) -> RGBColor:
+    return RGBColor.from_string(hex_color.lstrip("#").upper())
+
+
+def _shade(element_pr, hex_color: str):
+    shading = OxmlElement("w:shd")
+    shading.set(qn("w:val"), "clear")
+    shading.set(qn("w:color"), "auto")
+    shading.set(qn("w:fill"), hex_color.lstrip("#"))
+    element_pr.append(shading)
+
+
+def _borders(table, inside: str | None = RULE, outside: str | None = None, left: tuple[str, int] | None = None):
+    """Light horizontal rules only; optionally a thick coloured left edge for a call-out box."""
+    borders = OxmlElement("w:tblBorders")
+    for edge, color in (("top", outside), ("left", None), ("bottom", outside), ("right", None),
+                        ("insideH", inside), ("insideV", None)):
+        element = OxmlElement(f"w:{edge}")
+        if edge == "left" and left:
+            color, size = left
+        else:
+            size = 4
+        if color:
+            element.set(qn("w:val"), "single")
+            element.set(qn("w:sz"), str(size))
+            element.set(qn("w:color"), color.lstrip("#"))
+        else:
+            element.set(qn("w:val"), "nil")
+        borders.append(element)
+    table._tbl.tblPr.append(borders)
+
+
+def _field(run, instruction: str):
+    """A Word field such as PAGE or NUMPAGES."""
+    begin, text, end = OxmlElement("w:fldChar"), OxmlElement("w:instrText"), OxmlElement("w:fldChar")
+    begin.set(qn("w:fldCharType"), "begin")
+    text.set(qn("xml:space"), "preserve")
+    text.text = instruction
+    end.set(qn("w:fldCharType"), "end")
+    for element in (begin, text, end):
+        run._r.append(element)
+
+
+def _text(paragraph, text: str, size: float | None = None, bold=False, color: str | None = None, font: str | None = None):
+    run = paragraph.add_run(text)
+    run.bold = bold
+    if size:
+        run.font.size = Pt(size)
+    if color:
+        run.font.color.rgb = _rgb(color)
+    if font:
+        run.font.name = font
+    return run
+
+
+def _docx_heading(doc, number: int, title: str):
+    p = doc.add_paragraph()
+    p.paragraph_format.space_before = Pt(16)
+    p.paragraph_format.space_after = Pt(6)
+    p.paragraph_format.keep_with_next = True
+    _text(p, f"{number:02d}   ", 12, True, ACCENT)
+    _text(p, title, 12, True, INK)
+    border, line = OxmlElement("w:pBdr"), OxmlElement("w:bottom")
+    for key, value in (("val", "single"), ("sz", "8"), ("space", "2"), ("color", INK.lstrip("#"))):
+        line.set(qn(f"w:{key}"), value)
+    border.append(line)
+    p._p.get_or_add_pPr().append(border)
+
+
+def _docx_table(doc, header: list[str], rows: list[list[str]], widths_cm: list[float],
+                mono_col: int | None = None, highlight: dict | None = None):
+    table = doc.add_table(rows=1 + len(rows), cols=len(header))
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
+    _borders(table, outside=MUTED)
+    for i, title in enumerate(header):
+        cell = table.rows[0].cells[i]
+        _shade(cell._tc.get_or_add_tcPr(), SHADE)
+        _text(cell.paragraphs[0], title.upper(), 7.5, True, MUTED)
+    for r, values in enumerate(rows, start=1):
+        for i, value in enumerate(values):
+            color = (highlight or {}).get((r - 1, i))
+            _text(table.rows[r].cells[i].paragraphs[0], value, 8.5, bool(color), color,
+                  "Courier New" if i == mono_col else None)
+    table.autofit = False
+    for i, width in enumerate(widths_cm):
+        table.columns[i].width = Cm(width)
+        for cell in table.columns[i].cells:
+            cell.width = Cm(width)
+
+
+def _docx(c: ReportContent) -> Document:
+    doc = Document()
+    section = doc.sections[0]
+    section.page_width, section.page_height = Cm(21), Cm(29.7)
+    section.left_margin = section.right_margin = Cm(1.9)
+    section.top_margin, section.bottom_margin = Cm(2.2), Cm(2)
+    normal = doc.styles["Normal"]
+    normal.font.name, normal.font.size = "Calibri", Pt(10)
+    normal.font.color.rgb = _rgb(TEXT)
+    normal.paragraph_format.space_after = Pt(4)
+    normal.paragraph_format.line_spacing = 1.15
+    small = doc.styles.add_style("Report margin", 1)   # paragraph style for header and footer
+    small.base_style = normal
+    small.font.size, small.font.color.rgb = Pt(7.5), _rgb(MUTED)
+    small.paragraph_format.space_after = Pt(0)
+    right_edge = Cm(17.2)
+
+    header = section.header.paragraphs[0]
+    header.style = small
+    header.paragraph_format.tab_stops.add_tab_stop(right_edge, alignment=2)
+    _text(header, "SOAR-Lite", 9, True, INK)
+    _text(header, "   Security Incident Report", 8.5, False, MUTED)
+    _text(header, f"\tINC-{c.incident_id:05d} · CONFIDENTIAL", 8.5, True, SEVERITY_COLORS.get(c.severity, ACCENT))
+
+    footer = section.footer.paragraphs[0]
+    footer.style = small
+    footer.paragraph_format.tab_stops.add_tab_stop(right_edge, alignment=2)
+    _text(footer, f"Generated {c.generated} by SOAR-Lite v{c.version}. Internal use only.\tPage ", 7.5, False, MUTED)
+    _field(_text(footer, "", 7.5, False, MUTED), "PAGE")
+    _text(footer, " of ", 7.5, False, MUTED)
+    _field(_text(footer, "", 7.5, False, MUTED), "NUMPAGES")
+
+    _text(doc.add_paragraph(), f"INCIDENT INC-{c.incident_id:05d}", 8, True, ACCENT)
+    title = doc.add_paragraph()
+    title.paragraph_format.space_after = Pt(4)
+    _text(title, c.title, 18, True, INK)
+
+    tags = doc.add_paragraph()
+    tags.paragraph_format.space_after = Pt(10)
+    pills = [(f" {c.severity.upper()} SEVERITY ", SEVERITY_COLORS.get(c.severity, ACCENT)),
+             (f" {c.status.upper()} ", STATUS_COLORS.get(c.status, MUTED))]
+    if c.triage:
+        pills.append((f" AI: {c.triage['label'].upper()} ", VERDICT_COLORS.get(c.triage["verdict"], MUTED)))
+    for text, color in pills:
+        _shade(_text(tags, text, 8, True, "#ffffff")._r.get_or_add_rPr(), color)
+        tags.add_run("   ")
+
+    facts = doc.add_table(rows=2, cols=4)
+    _borders(facts, inside="#ffffff")
+    for index, (label, value) in enumerate(c.facts):
+        cell = facts.rows[index // 4].cells[index % 4]
+        _shade(cell._tc.get_or_add_tcPr(), SHADE)
+        cell.width = Cm(4.3)
+        _text(cell.paragraphs[0], label.upper(), 7, True, MUTED)
+        _text(cell.add_paragraph(), value, 10, True, TEXT)
+
+    n = 1
+    _docx_heading(doc, n, "Summary")
+    doc.add_paragraph(c.summary)
+
+    if c.triage:
+        n += 1
+        t = c.triage
+        color = VERDICT_COLORS.get(t["verdict"], MUTED)
+        _docx_heading(doc, n, "AI triage")
+        _text(doc.add_paragraph(), "A suggestion from a language model. It changes nothing on its own; "
+                                   "the analyst's decision is recorded with it.", 8, False, MUTED)
+        box = doc.add_table(rows=1, cols=1)
+        _borders(box, inside=None, outside=RULE, left=(color, 24))
+        cell = box.rows[0].cells[0]
+        _shade(cell._tc.get_or_add_tcPr(), "#fafafa")
+        first = cell.paragraphs[0]
+        _text(first, t["label"], 11, True, color)
+        _text(first, f"  ·  {t['severity']} severity  ·  {t['confidence']} confidence", 10, True, TEXT)
+        cell.add_paragraph(t["reasoning"])
+        for label, value in (("Records cited", t["evidence"]), ("Model", t["model"]), ("Analyst decision", t["decision"])):
+            p = cell.add_paragraph()
+            _text(p, f"{label}: ", 8.5, True)
+            _text(p, value, 8.5)
+        for guard in t["guards"]:
+            p = cell.add_paragraph()
+            _text(p, "Guard: ", 8.5, True, ACCENT)
+            _text(p, guard, 8.5)
+        if t["injection"]:
+            _text(cell.add_paragraph(), "Warning: text in this alert tries to instruct the AI (possible prompt injection). "
+                                        "Treat it as a sign the sender is malicious.", 8.5, True, WARNING)
+
+    if c.alerts:
+        n += 1
+        _docx_heading(doc, n, "Alerts")
+        _docx_table(doc, ["Source", "Alert", "Received"], [list(a) for a in c.alerts], [3.4, 9.6, 4.2])
+
+    if c.iocs:
+        n += 1
+        _docx_heading(doc, n, "Indicators of compromise")
+        flagged = {(i, 2): SEVERITY_COLORS["critical"] for i, ioc in enumerate(c.iocs) if ioc[2] == "Malicious"}
+        _docx_table(doc, ["Type", "Value", "Verdict", "Enrichment"], [list(i) for i in c.iocs], [1.8, 7.0, 2.4, 6.0],
+                    mono_col=1, highlight=flagged)
+
+    if c.next_steps:
+        n += 1
+        _docx_heading(doc, n, "Recommended next steps")
+        _text(doc.add_paragraph(), "Suggested by the AI triage; check each one before acting.", 8, False, MUTED)
+        for i, step in enumerate(c.next_steps, 1):
+            p = doc.add_paragraph()
+            _text(p, f"{i}   ", 10, True, ACCENT)
+            p.add_run(step)
+
+    if c.timeline:
+        n += 1
+        _docx_heading(doc, n, "Timeline")
+        _docx_table(doc, ["Time (UTC)", "By", "Event"], [list(t) for t in c.timeline], [2.8, 2.8, 11.6])
+    return doc
+
+
 class ReportService:
-    """
-    Generate incident reports in PDF and DOCX formats.
-    """
+    """Generate incident reports in PDF and DOCX formats."""
 
     @staticmethod
     def generate_pdf_report(incident: Incident) -> BytesIO:
-        """
-        Generate comprehensive PDF incident report.
-
-        Args:
-            incident: Incident object with loaded relationships
-
-        Returns:
-            BytesIO buffer containing PDF data
-        """
+        content = build_content(incident)
         buffer = BytesIO()
-        doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=72, leftMargin=72,
-                                topMargin=72, bottomMargin=18)
-
-        # Container for report elements
-        elements = []
-        styles = getSampleStyleSheet()
-
-        # Custom styles
-        title_style = ParagraphStyle(
-            'CustomTitle',
-            parent=styles['Heading1'],
-            fontSize=24,
-            textColor=colors.HexColor('#1e40af'),
-            spaceAfter=30,
-            alignment=1  # Center
-        )
-
-        heading_style = ParagraphStyle(
-            'CustomHeading',
-            parent=styles['Heading2'],
-            fontSize=16,
-            textColor=colors.HexColor('#1e40af'),
-            spaceAfter=12,
-            spaceBefore=12
-        )
-
-        # Title
-        severity_colors = {
-            'critical': colors.red,
-            'high': colors.orange,
-            'medium': colors.yellow,
-            'low': colors.blue
-        }
-        severity_color = severity_colors.get(incident.severity.value, colors.grey)
-
-        title = Paragraph(
-            f"<b>INCIDENT REPORT</b><br/>"
-            f"<font color='{severity_color.hexval()}'>[{incident.severity.value.upper()}]</font> "
-            f"{escape(incident.title)}",
-            title_style
-        )
-        elements.append(title)
-        elements.append(Spacer(1, 0.2 * inch))
-
-        # Metadata Table
-        metadata = [
-            ['Incident ID:', f'#{incident.id}'],
-            ['Severity:', incident.severity.value.upper()],
-            ['Status:', incident.status.value.upper()],
-            ['Created:', incident.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')],
-            ['Last Updated:', incident.updated_at.strftime('%Y-%m-%d %H:%M:%S UTC') if incident.updated_at else 'N/A'],
-        ]
-
-        metadata_table = Table(metadata, colWidths=[2*inch, 4*inch])
-        metadata_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#e5e7eb')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 10),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 1, colors.grey)
-        ]))
-        elements.append(metadata_table)
-        elements.append(Spacer(1, 0.3 * inch))
-
-        # Executive Summary
-        elements.append(Paragraph("<b>EXECUTIVE SUMMARY</b>", heading_style))
-        summary_text = incident.description or "No description available."
-        elements.append(Paragraph(escape(summary_text), styles['BodyText']))
-        elements.append(Spacer(1, 0.2 * inch))
-
-        # AI triage (a suggestion; the analyst decision is recorded with it)
-        ai_rows = ai_triage_lines(incident)
-        if ai_rows:
-            elements.append(Paragraph("<b>AI TRIAGE</b>", heading_style))
-            for label, text in ai_rows:
-                elements.append(Paragraph(f"<b>{escape(label)}:</b> {escape(text)}", styles['BodyText']))
-            elements.append(Spacer(1, 0.2 * inch))
-
-        # Alerts Section
-        if incident.alerts:
-            elements.append(Paragraph("<b>ALERTS</b>", heading_style))
-
-            alert_data = [['Source', 'Title', 'Created']]
-            for alert in incident.alerts:
-                alert_data.append([
-                    alert.source.upper(),
-                    alert.title[:50] + '...' if len(alert.title) > 50 else alert.title,
-                    alert.created_at.strftime('%Y-%m-%d %H:%M')
-                ])
-
-            alert_table = Table(alert_data, colWidths=[1*inch, 3.5*inch, 1.5*inch])
-            alert_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b82f6')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 10),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('GRID', (0, 0), (-1, -1), 1, colors.grey)
-            ]))
-            elements.append(alert_table)
-            elements.append(Spacer(1, 0.2 * inch))
-
-        # IOCs Section
-        if incident.iocs:
-            elements.append(Paragraph("<b>INDICATORS OF COMPROMISE (IOCs)</b>", heading_style))
-
-            ioc_data = [['Type', 'Value', 'Malicious', 'Enrichment Summary']]
-            for ioc in incident.iocs:
-                # Parse enrichment data for summary
-                enrichment_summary = "Not enriched"
-                if ioc.enrichment_data:
-                    try:
-                        enrich = json.loads(ioc.enrichment_data)
-                        parts = []
-                        if 'virustotal' in enrich:
-                            vt = enrich['virustotal']
-                            parts.append(f"VT: {vt.get('malicious', 0)} detections")
-                        if 'abuseipdb' in enrich:
-                            abuse = enrich['abuseipdb']
-                            parts.append(f"Abuse: {abuse.get('abuse_confidence_score', 0)}%")
-                        if 'geolocation' in enrich:
-                            geo = enrich['geolocation']
-                            parts.append(f"{geo.get('country', 'Unknown')}")
-                        enrichment_summary = ' | '.join(parts) if parts else "Enriched"
-                    except (ValueError, TypeError, AttributeError):
-                        enrichment_summary = "Parse error"
-
-                ioc_data.append([
-                    ioc.type.value.upper(),
-                    ioc.value[:40] + '...' if len(ioc.value) > 40 else ioc.value,
-                    '✗ YES' if ioc.is_malicious else '✓ No',
-                    enrichment_summary[:30] + '...' if len(enrichment_summary) > 30 else enrichment_summary
-                ])
-
-            ioc_table = Table(ioc_data, colWidths=[0.7*inch, 2*inch, 0.8*inch, 2.5*inch])
-            ioc_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b82f6')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 8),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
-            ]))
-            elements.append(ioc_table)
-            elements.append(Spacer(1, 0.2 * inch))
-
-        # Timeline Section
-        if incident.actions:
-            elements.append(PageBreak())
-            elements.append(Paragraph("<b>INCIDENT TIMELINE</b>", heading_style))
-
-            timeline_data = [['Timestamp', 'Action', 'Performed By']]
-            for action in incident.actions:
-                timeline_data.append([
-                    action.created_at.strftime('%m/%d %H:%M'),
-                    action.description[:60] + '...' if len(action.description) > 60 else action.description,
-                    action.performed_by
-                ])
-
-            timeline_table = Table(timeline_data, colWidths=[1*inch, 3.5*inch, 1.5*inch])
-            timeline_table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#3b82f6')),
-                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, -1), 9),
-                ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
-                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f3f4f6')])
-            ]))
-            elements.append(timeline_table)
-
-        # Footer
-        elements.append(Spacer(1, 0.5 * inch))
-        footer_text = f"<i>Report generated by SOAR-Lite on {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</i>"
-        elements.append(Paragraph(footer_text, styles['Normal']))
-
-        # Build PDF
-        doc.build(elements)
+        doc = SimpleDocTemplate(buffer, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm,
+                                topMargin=24 * mm, bottomMargin=20 * mm,
+                                title=f"INC-{content.incident_id:05d} incident report", author="SOAR-Lite")
+        doc.build(_pdf_elements(content, _styles()),
+                  canvasmaker=lambda *a, **k: _ReportCanvas(*a, content=content, **k))
         buffer.seek(0)
         return buffer
 
     @staticmethod
     def generate_docx_report(incident: Incident) -> BytesIO:
-        """
-        Generate editable DOCX incident report.
-
-        Args:
-            incident: Incident object with loaded relationships
-
-        Returns:
-            BytesIO buffer containing DOCX data
-        """
-        doc = Document()
-
-        # Title
-        title = doc.add_heading('INCIDENT REPORT', 0)
-        title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        subtitle = doc.add_heading(f'[{incident.severity.value.upper()}] {incident.title}', level=2)
-        subtitle.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        # Set subtitle color based on severity
-        severity_colors = {
-            'critical': RGBColor(220, 38, 38),
-            'high': RGBColor(249, 115, 22),
-            'medium': RGBColor(234, 179, 8),
-            'low': RGBColor(59, 130, 246)
-        }
-        if incident.severity.value in severity_colors:
-            for run in subtitle.runs:
-                run.font.color.rgb = severity_colors[incident.severity.value]
-
-        doc.add_paragraph()  # Spacer
-
-        # Metadata Table
-        table = doc.add_table(rows=5, cols=2)
-        table.style = 'Light Grid Accent 1'
-
-        metadata = [
-            ('Incident ID:', f'#{incident.id}'),
-            ('Severity:', incident.severity.value.upper()),
-            ('Status:', incident.status.value.upper()),
-            ('Created:', incident.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')),
-            ('Last Updated:', incident.updated_at.strftime('%Y-%m-%d %H:%M:%S UTC') if incident.updated_at else 'N/A')
-        ]
-
-        for i, (key, value) in enumerate(metadata):
-            table.rows[i].cells[0].text = key
-            table.rows[i].cells[1].text = value
-            table.rows[i].cells[0].paragraphs[0].runs[0].font.bold = True
-
-        doc.add_paragraph()
-
-        # Executive Summary
-        doc.add_heading('Executive Summary', level=1)
-        doc.add_paragraph(incident.description or "No description available.")
-
-        # AI triage
-        ai_rows = ai_triage_lines(incident)
-        if ai_rows:
-            doc.add_heading('AI Triage', level=1)
-            for label, text in ai_rows:
-                paragraph = doc.add_paragraph()
-                paragraph.add_run(f"{label}: ").bold = True
-                paragraph.add_run(text)
-
-        # Alerts
-        if incident.alerts:
-            doc.add_heading('Alerts', level=1)
-
-            alert_table = doc.add_table(rows=1 + len(incident.alerts), cols=3)
-            alert_table.style = 'Light Grid Accent 1'
-
-            # Header
-            header_cells = alert_table.rows[0].cells
-            header_cells[0].text = 'Source'
-            header_cells[1].text = 'Title'
-            header_cells[2].text = 'Created'
-
-            for cell in header_cells:
-                cell.paragraphs[0].runs[0].font.bold = True
-
-            # Data
-            for i, alert in enumerate(incident.alerts, start=1):
-                row_cells = alert_table.rows[i].cells
-                row_cells[0].text = alert.source.upper()
-                row_cells[1].text = alert.title
-                row_cells[2].text = alert.created_at.strftime('%Y-%m-%d %H:%M')
-
-        # IOCs
-        if incident.iocs:
-            doc.add_heading('Indicators of Compromise (IOCs)', level=1)
-
-            ioc_table = doc.add_table(rows=1 + len(incident.iocs), cols=4)
-            ioc_table.style = 'Light Grid Accent 1'
-
-            # Header
-            header_cells = ioc_table.rows[0].cells
-            header_cells[0].text = 'Type'
-            header_cells[1].text = 'Value'
-            header_cells[2].text = 'Malicious'
-            header_cells[3].text = 'Enrichment Summary'
-
-            for cell in header_cells:
-                cell.paragraphs[0].runs[0].font.bold = True
-
-            # Data
-            for i, ioc in enumerate(incident.iocs, start=1):
-                row_cells = ioc_table.rows[i].cells
-                row_cells[0].text = ioc.type.value.upper()
-                row_cells[1].text = ioc.value
-                row_cells[2].text = '✗ YES' if ioc.is_malicious else '✓ No'
-
-                # Enrichment summary
-                enrichment_summary = "Not enriched"
-                if ioc.enrichment_data:
-                    try:
-                        enrich = json.loads(ioc.enrichment_data)
-                        parts = []
-                        if 'virustotal' in enrich:
-                            parts.append(f"VT: {enrich['virustotal'].get('malicious', 0)} detections")
-                        if 'abuseipdb' in enrich:
-                            parts.append(f"Abuse: {enrich['abuseipdb'].get('abuse_confidence_score', 0)}%")
-                        enrichment_summary = ' | '.join(parts) if parts else "Enriched"
-                    except (ValueError, TypeError, AttributeError):
-                        enrichment_summary = "Parse error"
-
-                row_cells[3].text = enrichment_summary
-
-        # Timeline
-        if incident.actions:
-            doc.add_page_break()
-            doc.add_heading('Incident Timeline', level=1)
-
-            timeline_table = doc.add_table(rows=1 + len(incident.actions), cols=3)
-            timeline_table.style = 'Light Grid Accent 1'
-
-            # Header
-            header_cells = timeline_table.rows[0].cells
-            header_cells[0].text = 'Timestamp'
-            header_cells[1].text = 'Action'
-            header_cells[2].text = 'Performed By'
-
-            for cell in header_cells:
-                cell.paragraphs[0].runs[0].font.bold = True
-
-            # Data
-            for i, action in enumerate(incident.actions, start=1):
-                row_cells = timeline_table.rows[i].cells
-                row_cells[0].text = action.created_at.strftime('%m/%d %H:%M')
-                row_cells[1].text = action.description
-                row_cells[2].text = action.performed_by
-
-        # Footer
-        doc.add_paragraph()
-        footer = doc.add_paragraph()
-        footer.add_run(f"Report generated by SOAR-Lite on {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}").italic = True
-        footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
-
-        # Save to buffer
         buffer = BytesIO()
-        doc.save(buffer)
+        _docx(build_content(incident)).save(buffer)
         buffer.seek(0)
         return buffer

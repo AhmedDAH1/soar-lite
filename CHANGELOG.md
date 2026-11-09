@@ -4,6 +4,18 @@ All notable changes to SOAR-Lite. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [3.1.0] - 2026-11-09
+
+### Changed
+- **Redesigned PDF and Word incident reports.** A4, with a header bar
+  (incident number, confidentiality marking), "page X of Y" footers, a cover
+  block with severity, status and AI-verdict labels and a grid of key facts,
+  numbered sections, the AI triage as a call-out box coloured by verdict
+  (with any prompt-injection warning), clean tables for alerts and
+  indicators, the AI's next steps as a numbered list, and the timeline.
+- PDF and Word are built from the same content, so they always match.
+  Everything from an alert is still escaped before it reaches the PDF.
+
 ## [3.0.1] - 2026-11-08
 
 ### Fixed
