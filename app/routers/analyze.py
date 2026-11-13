@@ -22,6 +22,7 @@ class UploadedFile(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     files: list[UploadedFile]
+    triage: bool = True      # False: open incidents without asking the AI (e.g. automated checks)
 
 
 @router.post("/")
@@ -41,7 +42,9 @@ def analyze(request: AnalyzeRequest, db: Session = Depends(get_db)) -> dict[str,
     except analysis_service.AnalyzerUnavailableError as e:
         raise HTTPException(status_code=502, detail=str(e)) from None
 
-    if get_settings().AUTO_TRIAGE:
+    # Files someone chose to analyse are always triaged when a model is set;
+    # AUTO_TRIAGE only governs incidents that arrive by webhook.
+    if request.triage:
         for incident_id in result["incident_ids"]:
             triage_service.queue(incident_id)
     incidents = db.query(Incident).filter(Incident.id.in_(result["incident_ids"])).all() if result["incident_ids"] else []

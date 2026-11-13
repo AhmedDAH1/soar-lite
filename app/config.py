@@ -11,7 +11,7 @@ class Settings(BaseSettings):
 
     # Application
     APP_NAME: str = "SOAR-Lite"
-    APP_VERSION: str = "3.1.0"
+    APP_VERSION: str = "3.2.0"
     # Enables /docs and /redoc. Off unless set, so a deployment never exposes them by accident.
     DEBUG: bool = False
 
@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     TRIAGE_API_KEY: str = ""
     TRIAGE_TIMEOUT: int = 0            # seconds; 0 = 60 for cloud APIs, 600 for a local model
     TRIAGE_MODE: str = "strict"        # naive | hardened | guarded | strict
-    AUTO_TRIAGE: bool = True           # triage every new incident as it arrives
+    AUTO_TRIAGE: bool = True           # triage incidents that arrive by webhook (uploads are always triaged)
     # The SOC's own records (asset inventory, change tickets, known senders)
     # that the AI may cite to dismiss an alert. Attackers can't write to it.
     SOC_CONTEXT_FILE: str = "soc_context.yml"

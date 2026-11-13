@@ -132,6 +132,18 @@ def _run_in_thread(result_id: int):
         db.close()
 
 
+class _Capture:
+    """Passes requests to the model and keeps its last raw answer, for error messages."""
+
+    def __init__(self, inner):
+        self.inner, self.name, self.last = inner, getattr(inner, "name", "model"), None
+
+    def complete(self, messages):
+        self.last = None
+        self.last = self.inner.complete(messages)
+        return self.last
+
+
 def run(db: Session, result_id: int, model=None) -> TriageResult:
     """Ask the model and store its verdict, after the guards for this mode have checked it."""
     from triage.engine import triage
@@ -141,7 +153,12 @@ def run(db: Session, result_id: int, model=None) -> TriageResult:
     alert = alert_for(incident)
     result.context = alert["context"]
     try:
-        verdict = triage(alert, model or provider(), result.mode)
+        model = _Capture(model or provider())
+        verdict = triage(alert, model, result.mode)
+        if not verdict.valid and model.last is not None:
+            # An unreadable answer is often a one-off (a cut-off reply, a notice from a
+            # reseller): ask once more before sending the incident to an analyst.
+            verdict = triage(alert, model, result.mode)
     except NotConfiguredError as e:
         result.status, result.error = "disabled", str(e)
         db.commit()
@@ -160,6 +177,8 @@ def run(db: Session, result_id: int, model=None) -> TriageResult:
     result.status = "done" if verdict.valid else "failed"
     if not verdict.valid:
         result.error = verdict.reasoning   # e.g. "model unavailable (HTTP 503)"
+        if model.last is not None:         # show what came back, so the cause is visible
+            result.error += f". The model replied: {model.last[:300]!r}"
     result.completed_at = datetime.now(timezone.utc)
 
     note = f"AI triage ({result.model}, {result.mode} mode) suggests: {VERDICT_LABELS[verdict.verdict]}, {verdict.severity} severity"

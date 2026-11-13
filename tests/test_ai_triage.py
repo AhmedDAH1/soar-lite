@@ -295,3 +295,40 @@ def test_reports_include_the_ai_suggestion_and_decision(ai_on):
     for fmt in ("pdf", "docx"):
         response = client.get(f"/api/reports/incident/{incident_id}/{fmt}")
         assert response.status_code == 200 and len(response.content) > 1000
+
+
+class Flaky(ScriptedModel):
+    """First answer is a reseller notice, the second a real verdict."""
+
+    def complete(self, messages):
+        self.prompts.append(messages)
+        return "Service busy, please retry" if len(self.prompts) == 1 else self.answer
+
+
+def test_an_unreadable_answer_is_retried_once(ai_on):
+    model = Flaky("true_positive", "high")
+    result = triage_with(model, make_incident())
+    assert result.status == "done" and len(model.prompts) == 2
+
+
+def test_failure_shows_what_the_model_replied(ai_on):
+    class Notice(ScriptedModel):
+        def complete(self, messages):
+            self.prompts.append(messages)
+            return "余额不足 balance too low"
+
+    model = Notice()
+    result = triage_with(model, make_incident())
+    assert result.status == "failed" and "balance too low" in result.error
+    assert len(model.prompts) == 2                                  # one retry, then give up
+
+
+def test_uploads_can_skip_the_ai(monkeypatch):
+    queued = []
+    monkeypatch.setattr(analysis_service, "_post", lambda url, payload, tool: LTD_RESPONSE)
+    monkeypatch.setattr(triage_service, "queue", queued.append)
+    files = [{"name": "auth.log", "content": "x"}]
+    client.post("/api/analyze/", json={"files": files, "triage": False})
+    assert queued == []
+    client.post("/api/analyze/", json={"files": files})
+    assert len(queued) == 1

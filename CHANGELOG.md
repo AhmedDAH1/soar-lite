@@ -4,6 +4,20 @@ All notable changes to SOAR-Lite. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 uses [Semantic Versioning](https://semver.org/).
 
+## [3.2.0] - 2026-11-13
+
+### Fixed
+- An unreadable model answer (a cut-off reply, a notice from an API
+  reseller) is retried once before the incident goes to an analyst, and the
+  error now shows what the model actually replied, so the cause is visible
+  on the incident page.
+
+### Changed
+- Files uploaded on the Analyze page are always triaged when a model is
+  set; `AUTO_TRIAGE` now only covers incidents that arrive by webhook. An
+  upload can opt out with `"triage": false` (SOC Lab's automated check does,
+  so starting the lab costs no AI calls).
+
 ## [3.1.0] - 2026-11-09
 
 ### Changed

@@ -177,7 +177,7 @@ AI triage is off until a model is set:
 | `TRIAGE_BASE_URL`, `TRIAGE_MODEL` | `https://api.deepseek.com`, `deepseek-flash` | Any OpenAI-compatible API, including resellers |
 | `TRIAGE_API_KEY` | | Not needed for a local model; never shown in the dashboard or sent to a local server |
 | `TRIAGE_MODE` | `strict` (default) | `naive`, `hardened`, `guarded` or `strict`; see [ai-alert-triage](https://github.com/AhmedDAH1/ai-alert-triage#three-modes-measured-against-each-other) |
-| `AUTO_TRIAGE` | `true` (default) | Triage every incident as it arrives; otherwise press *Ask the AI* on the incident |
+| `AUTO_TRIAGE` | `true` (default) | Triage incidents that arrive by webhook as they come in; otherwise press *Ask the AI* on the incident. Uploaded files are always triaged |
 | `SOC_CONTEXT_FILE` | `soc_context.yml` | The trusted records the AI may cite |
 
 Triage runs in the background, so a slow local model never holds up
